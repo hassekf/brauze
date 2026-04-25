@@ -414,7 +414,6 @@ app.whenReady().then(() => {
   // Preconnect: DNS + TCP + TLS handshake antecipado, sem baixar HTML.
   const preconnectCache = new Map(); // url → timestamp
   const PRECONNECT_TTL = 30_000;
-  const brauzeSession = session.fromPartition('persist:brauze');
   ipcMain.on('omnibox:preconnect', (_e, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
     const now = Date.now();

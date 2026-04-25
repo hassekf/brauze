@@ -887,6 +887,42 @@ webview.active { display: flex; }
   letter-spacing: 0.4px;
 }
 
+#profile-new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid #2a2a30;
+  background: #1f1f24;
+}
+#profile-new-form.hidden { display: none; }
+#profile-new-form input {
+  background: #1b1b1f;
+  border: 1px solid #34343c;
+  color: #e6e6e6;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+#profile-new-form input:focus { border-color: #5a8dff; }
+#profile-new-form button {
+  background: #2a2a30;
+  border: 1px solid #34343c;
+  color: #d8d8d8;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+#profile-new-form button:hover { background: #34343c; color: #fff; }
+#profile-new-form #profile-new-create {
+  background: #2d3a52;
+  border-color: #3a4a6a;
+  color: #8ab4ff;
+}
+#profile-new-form #profile-new-create:hover { background: #3a4a6a; color: #fff; }
+
 #privacy-popover {
   position: fixed;
   top: 78px;

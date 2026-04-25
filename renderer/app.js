@@ -2098,11 +2098,10 @@ async function refreshProfileList() {
       `<div class="profile-avatar" style="background:${p.color}">${escapeHtml(p.avatar || p.name[0])}</div>` +
       `<div class="profile-name">${escapeHtml(p.name)}</div>` +
       (p.id === activeProfileId ? `<span class="profile-active-marker">ativo</span>` : '');
-    if (p.id !== activeProfileId) {
-      row.addEventListener('click', async () => {
-        await window.brauze.profiles.switchTo(p.id);
-      });
-    }
+    row.addEventListener('click', async () => {
+      if (p.id === activeProfileId) { closeProfilePopover(); return; }
+      await window.brauze.profiles.switchTo(p.id);
+    });
     PROFILE_LIST.appendChild(row);
   });
 }
@@ -2129,11 +2128,27 @@ PROFILE_BTN.addEventListener('click', async (e) => {
   }
 });
 
-PROFILE_NEW.addEventListener('click', async () => {
-  const name = prompt('Nome do novo profile:');
+const PROFILE_NEW_FORM   = document.getElementById('profile-new-form');
+const PROFILE_NEW_NAME   = document.getElementById('profile-new-name');
+const PROFILE_NEW_CREATE = document.getElementById('profile-new-create');
+const PROFILE_NEW_CANCEL = document.getElementById('profile-new-cancel');
+
+PROFILE_NEW.addEventListener('click', () => {
+  PROFILE_NEW_FORM.classList.remove('hidden');
+  PROFILE_NEW_NAME.value = '';
+  PROFILE_NEW_NAME.focus();
+});
+PROFILE_NEW_CANCEL.addEventListener('click', () => PROFILE_NEW_FORM.classList.add('hidden'));
+PROFILE_NEW_CREATE.addEventListener('click', async () => {
+  const name = PROFILE_NEW_NAME.value.trim();
   if (!name) return;
   await window.brauze.profiles.create({ name });
+  PROFILE_NEW_FORM.classList.add('hidden');
   await refreshProfileList();
+});
+PROFILE_NEW_NAME.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); PROFILE_NEW_CREATE.click(); }
+  if (e.key === 'Escape') { e.preventDefault(); PROFILE_NEW_CANCEL.click(); }
 });
 
 // Boot

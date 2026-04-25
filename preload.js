@@ -85,6 +85,11 @@ contextBridge.exposeInMainWorld('brauze', {
     preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
     recentHistory:    (limit)   => ipcRenderer.invoke('history:recent', limit),
   },
+  permissions: {
+    list:  ()                       => ipcRenderer.invoke('permissions:list'),
+    set:   (origin, permission, allow) => ipcRenderer.invoke('permissions:set', origin, permission, allow),
+    clear: (origin)                 => ipcRenderer.invoke('permissions:clear', origin),
+  },
   adblock: {
     whitelist:       ()  => ipcRenderer.invoke('adblock:whitelist'),
     addToWhitelist:  (h) => ipcRenderer.invoke('adblock:whitelist-add', h),

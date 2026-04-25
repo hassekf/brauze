@@ -8,13 +8,16 @@ const terminal    = require('./terminal');
 const watchedFolders = require('./watched-folders');
 const promptIA = require('./prompt');
 const mcpServer = require('./mcp-server');
-const adblock   = require('./adblock');
-const herd      = require('./herd');
-const history   = require('./history');
-const omnibox   = require('./omnibox');
+const adblock     = require('./adblock');
+const herd        = require('./herd');
+const history     = require('./history');
+const omnibox     = require('./omnibox');
+const permissions = require('./permissions');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
+// Bloqueia autoplay de áudio/vídeo até gesto do usuário.
+app.commandLine.appendSwitch('autoplay-policy', 'user-gesture-required');
 
 // Protocolo brauze://<page> serve HTML estático de renderer/internal/<page>.html
 protocol.registerSchemesAsPrivileged([
@@ -107,6 +110,20 @@ app.whenReady().then(() => {
 
   watchedFolders.init({ userDataPath: app.getPath('userData') });
   history.init({ userDataPath: app.getPath('userData') });
+  permissions.load(app.getPath('userData'));
+
+  // Permission handler: nega sensíveis por default na sessão das webviews
+  const brauzeSession = session.fromPartition('persist:brauze');
+  brauzeSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    let origin = '';
+    try { origin = new URL(details.requestingUrl || wc.getURL()).origin; } catch {}
+    const allow = permissions.decide(origin, permission);
+    if (!allow) console.log(`[permission] deny ${permission} for ${origin}`);
+    callback(allow);
+  });
+  brauzeSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+    return permissions.decide(requestingOrigin || '', permission);
+  });
 
   // Adblock na sessão compartilhada das webviews (`persist:brauze`)
   // — apenas network blocking, com whitelist por domínio.
@@ -131,7 +148,33 @@ app.whenReady().then(() => {
     }
   };
   const attachMenu = contextMenu.attach({ onOpenInNewTab: sendOpenTab, onInspect: sendInspect });
+  // Lockdown de qualquer webview que for criado: força sandbox + sem preload custom +
+  // sem nodeIntegration. Renderer não pode escapar dessas opções.
   app.on('web-contents-created', (_e, contents) => {
+    contents.on('will-attach-webview', (_event, webPreferences, params) => {
+      delete webPreferences.preload;
+      delete webPreferences.preloadURL;
+      webPreferences.nodeIntegration  = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox          = true;
+      webPreferences.webSecurity      = true;
+      webPreferences.allowRunningInsecureContent = false;
+      webPreferences.experimentalFeatures = false;
+    });
+
+    // Bloqueia navegação pra schemes perigosos (file://, chrome://, etc) iniciada por sites
+    contents.on('will-navigate', (event, url) => {
+      try {
+        const u = new URL(url);
+        const scheme = u.protocol.replace(':', '');
+        const ALLOWED = ['http', 'https', 'brauze', 'about', 'blob', 'data'];
+        if (!ALLOWED.includes(scheme)) {
+          console.warn('[security] blocked navigation to', url);
+          event.preventDefault();
+        }
+      } catch {}
+    });
+
     attachMenu(contents);
     contents.setWindowOpenHandler(({ url }) => {
       sendOpenTab(url);
@@ -381,6 +424,11 @@ app.whenReady().then(() => {
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
   });
+
+  // ---- Permissions ----
+  ipcMain.handle('permissions:list',  ()                 => permissions.listOrigins());
+  ipcMain.handle('permissions:set',   (_e, origin, perm, allow) => permissions.setOriginDecision(origin, perm, allow));
+  ipcMain.handle('permissions:clear', (_e, origin)       => permissions.clearOrigin(origin));
 
   // ---- Adblock whitelist ----
   ipcMain.handle('adblock:whitelist',        ()       => adblock.getWhitelist());

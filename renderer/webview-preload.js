@@ -2,6 +2,7 @@
 // e reporta pro main via IPC. Também esconde cookie banners conhecidos via CSS.
 
 const { ipcRenderer, contextBridge } = require('electron');
+console.log('[brauze-webview-preload] loaded for', location.href);
 
 // Expõe API privilegiada APENAS pra páginas internas brauze://
 try {
@@ -106,13 +107,14 @@ function findUsernameInput(form, passwordInput) {
 
 function reportCredential(username, password) {
   if (!password) return;
+  console.log('[brauze-webview-preload] reporting credential for', location.origin, 'username=', username);
   try {
     ipcRenderer.send('passwords:form-submit', {
       origin: location.origin,
       username: username || '',
       password,
     });
-  } catch {}
+  } catch (err) { console.warn('[brauze-webview-preload] send failed:', err.message); }
 }
 
 function captureFromForm(form) {

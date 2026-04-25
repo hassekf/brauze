@@ -167,8 +167,6 @@ app.whenReady().then(() => {
     }).catch((err) => console.error('[adblock] erro:', err));
   }
 
-  createWindow();
-
   // Anexa menu de contexto + redireciona window.open / target=_blank pra novas abas.
   const sendOpenTab = (url) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -181,8 +179,8 @@ app.whenReady().then(() => {
     }
   };
   const attachMenu = contextMenu.attach({ onOpenInNewTab: sendOpenTab, onInspect: sendInspect });
-  // Lockdown de qualquer webview que for criado: força sandbox + sem preload custom +
-  // sem nodeIntegration. Renderer não pode escapar dessas opções.
+  // IMPORTANTE: registrar ANTES de createWindow pra pegar o mainWindow.webContents também.
+  // Caso contrário will-attach-webview nunca dispara e webviews ficam sem preload nosso.
   app.on('web-contents-created', (_e, contents) => {
     contents.on('will-attach-webview', (_event, webPreferences, params) => {
       // Força preload nosso (privacy/fingerprint detector). Renderer não pode trocar.
@@ -247,6 +245,10 @@ app.whenReady().then(() => {
       }
     });
   });
+
+  // Janela criada DEPOIS do web-contents-created listener pra garantir que
+  // o handler will-attach-webview pegue mainWindow.webContents.
+  createWindow();
 
   ipcMain.handle('radar:scan-now', async () => {
     const services = await scan();
@@ -474,9 +476,11 @@ app.whenReady().then(() => {
   }, 60_000);
 
   ipcMain.on('passwords:form-submit', (e, payload) => {
+    console.log('[passwords] form-submit received from wcId=', e.sender.id, 'origin=', payload && payload.origin, 'hasPwd=', !!(payload && payload.password));
     if (!payload || !payload.origin || !payload.password) return;
     pendingSaves.set(e.sender.id, { ...payload, ts: Date.now() });
     if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log('[passwords] sending save-prompt to renderer');
       mainWindow.webContents.send('passwords:save-prompt', {
         wcId: e.sender.id,
         origin: payload.origin,

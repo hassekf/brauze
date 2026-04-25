@@ -18,6 +18,7 @@
       <button id="forward" class="navbtn" title="Avançar">›</button>
       <button id="reload"  class="navbtn" title="Recarregar">↻</button>
       <button id="shield"  class="navbtn shield-btn" title="Privacidade">🛡</button>
+      <button id="profile-btn" class="navbtn profile-btn" title="Trocar profile">P</button>
       <div id="address-wrap">
         <button id="mode-toggle" class="mode-toggle" title="Alternar modo (Ctrl+/)">🌐</button>
         <input id="address" type="text" spellcheck="false"
@@ -39,6 +40,14 @@
   </div>
 
   <div id="omnibox-popover" class="hidden"></div>
+
+  <div id="profile-popover" class="hidden">
+    <div class="pp-header"><span class="pp-title">Profiles</span></div>
+    <div id="profile-list"></div>
+    <div class="pp-actions">
+      <button id="profile-new">+ Novo profile</button>
+    </div>
+  </div>
 
   <div id="privacy-popover" class="hidden">
     <div class="pp-header">

@@ -85,6 +85,15 @@ contextBridge.exposeInMainWorld('brauze', {
     preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
     recentHistory:    (limit)   => ipcRenderer.invoke('history:recent', limit),
   },
+  profiles: {
+    list:    ()           => ipcRenderer.invoke('profiles:list'),
+    active:  ()           => ipcRenderer.invoke('profiles:active'),
+    session: ()           => ipcRenderer.invoke('profiles:session'),
+    create:  (p)          => ipcRenderer.invoke('profiles:create', p),
+    switchTo:(id)         => ipcRenderer.invoke('profiles:switch', id),
+    update:  (id, patch)  => ipcRenderer.invoke('profiles:update', id, patch),
+    remove:  (id)         => ipcRenderer.invoke('profiles:remove', id),
+  },
   privacy: {
     getStats: (wcId) => ipcRenderer.invoke('privacy:get-stats', wcId),
   },

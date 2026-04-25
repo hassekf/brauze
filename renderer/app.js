@@ -81,7 +81,7 @@ function createTab(url = HOMEPAGE) {
   view.dataset.id = id;
   view.setAttribute('src', url);
   view.setAttribute('allowpopups', '');
-  view.setAttribute('partition', 'persist:brauze'); // session compartilhada (cookies + adblock)
+  view.setAttribute('partition', activePartition); // session do profile ativo
   viewsEl.appendChild(view);
 
   // Splash dark sobre o webview até o primeiro paint, mata o flash branco do Chromium.
@@ -1911,5 +1911,75 @@ SHIELD.addEventListener('click', togglePrivacy);
 PP_CLOSE.addEventListener('click', togglePrivacy);
 window.addEventListener('resize', () => { if (!PP_POPOVER.classList.contains('hidden')) positionPrivacyPopover(); });
 
+// ---- Profile switcher ----
+const PROFILE_BTN = document.getElementById('profile-btn');
+const PROFILE_POP = document.getElementById('profile-popover');
+const PROFILE_LIST = document.getElementById('profile-list');
+const PROFILE_NEW  = document.getElementById('profile-new');
+
+let activePartition = 'persist:brauze';
+let activeProfileId = 'default';
+
+async function paintProfileButton(profile) {
+  PROFILE_BTN.textContent = profile.avatar || profile.name[0].toUpperCase();
+  PROFILE_BTN.style.background = profile.color || '#5a8dff';
+  PROFILE_BTN.title = `Profile: ${profile.name}`;
+}
+
+async function refreshProfileList() {
+  const list = await window.brauze.profiles.list();
+  PROFILE_LIST.innerHTML = '';
+  list.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'profile-row' + (p.id === activeProfileId ? ' active' : '');
+    row.innerHTML =
+      `<div class="profile-avatar" style="background:${p.color}">${escapeHtml(p.avatar || p.name[0])}</div>` +
+      `<div class="profile-name">${escapeHtml(p.name)}</div>` +
+      (p.id === activeProfileId ? `<span class="profile-active-marker">ativo</span>` : '');
+    if (p.id !== activeProfileId) {
+      row.addEventListener('click', async () => {
+        await window.brauze.profiles.switchTo(p.id);
+      });
+    }
+    PROFILE_LIST.appendChild(row);
+  });
+}
+
+function positionProfilePopover() {
+  const r = PROFILE_BTN.getBoundingClientRect();
+  PROFILE_POP.style.left = Math.min(r.left - 220, window.innerWidth - 280) + 'px';
+}
+
+PROFILE_BTN.addEventListener('click', async () => {
+  if (PROFILE_POP.classList.contains('hidden')) {
+    positionProfilePopover();
+    PROFILE_POP.classList.remove('hidden');
+    await refreshProfileList();
+  } else {
+    PROFILE_POP.classList.add('hidden');
+  }
+});
+
+PROFILE_NEW.addEventListener('click', async () => {
+  const name = prompt('Nome do novo profile:');
+  if (!name) return;
+  await window.brauze.profiles.create({ name });
+  await refreshProfileList();
+});
+
+document.addEventListener('click', (e) => {
+  if (!PROFILE_POP.contains(e.target) && e.target !== PROFILE_BTN) {
+    PROFILE_POP.classList.add('hidden');
+  }
+});
+
 // Boot
-createTab();
+(async () => {
+  try {
+    const profile = await window.brauze.profiles.active();
+    activePartition = await window.brauze.profiles.session();
+    activeProfileId = profile.id;
+    paintProfileButton(profile);
+  } catch (err) { console.warn('[profile] boot:', err); }
+  createTab();
+})();

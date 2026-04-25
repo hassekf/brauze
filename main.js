@@ -15,6 +15,7 @@ const omnibox     = require('./omnibox');
 const permissions = require('./permissions');
 const cookies     = require('./cookies');
 const privacy     = require('./privacy');
+const profiles    = require('./profiles');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
@@ -108,15 +109,24 @@ app.whenReady().then(() => {
     }
   };
   protocol.handle('brauze', brauzeProtocolHandler);
-  session.fromPartition('persist:brauze').protocol.handle('brauze', brauzeProtocolHandler);
 
-  watchedFolders.init({ userDataPath: app.getPath('userData') });
-  history.init({ userDataPath: app.getPath('userData') });
-  permissions.load(app.getPath('userData'));
-  cookies.load(app.getPath('userData'));
+  // Profile system: tudo daqui pra baixo usa o profile ativo
+  profiles.init(app.getPath('userData'));
+  const activeProfile = profiles.getActive();
+  const profilePath   = profiles.getProfilePath(activeProfile.id);
+  const sessionPart   = profiles.getActiveSession();
+  console.log(`[profile] ativo: ${activeProfile.name} (${activeProfile.id}) · session: ${sessionPart}`);
+
+  // Registra brauze:// também na partition do profile ativo (pra newtab funcionar)
+  session.fromPartition(sessionPart).protocol.handle('brauze', brauzeProtocolHandler);
+
+  watchedFolders.init({ userDataPath: profilePath });
+  history.init({ userDataPath: profilePath });
+  permissions.load(profilePath);
+  cookies.load(profilePath);
 
   // Permission handler: nega sensíveis por default na sessão das webviews
-  const brauzeSession = session.fromPartition('persist:brauze');
+  const brauzeSession = session.fromPartition(sessionPart);
   brauzeSession.setPermissionRequestHandler((wc, permission, callback, details) => {
     let origin = '';
     try { origin = new URL(details.requestingUrl || wc.getURL()).origin; } catch {}
@@ -132,12 +142,11 @@ app.whenReady().then(() => {
   // Bloqueia third-party cookies por default (com whitelist em cookies-3p-allow.json)
   cookies.attachToSession(brauzeSession);
 
-  // Adblock na sessão compartilhada das webviews (`persist:brauze`)
-  // — apenas network blocking, com whitelist por domínio.
+  // Adblock na sessão do profile ativo — apenas network blocking, com whitelist.
   if (!process.env.BRAUZE_NO_ADBLOCK) {
     adblock.init({
-      userDataPath: app.getPath('userData'),
-      session: session.fromPartition('persist:brauze'),
+      userDataPath: profilePath,
+      session: brauzeSession,
     }).catch((err) => console.error('[adblock] erro:', err));
   }
 
@@ -437,6 +446,20 @@ app.whenReady().then(() => {
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
   });
+
+  // ---- Profiles ----
+  ipcMain.handle('profiles:list',     ()        => profiles.list());
+  ipcMain.handle('profiles:active',   ()        => profiles.getActive());
+  ipcMain.handle('profiles:session',  ()        => profiles.getActiveSession());
+  ipcMain.handle('profiles:create',   (_e, p)   => profiles.create(p || {}));
+  ipcMain.handle('profiles:switch',   (_e, id)  => {
+    if (!profiles.setActive(id)) return false;
+    app.relaunch();
+    app.exit(0);
+    return true;
+  });
+  ipcMain.handle('profiles:update',   (_e, id, patch) => profiles.update(id, patch));
+  ipcMain.handle('profiles:remove',   (_e, id) => profiles.remove(id));
 
   // ---- Privacy dashboard ----
   ipcMain.handle('privacy:get-stats', (_e, wcId) => privacy.snapshot(wcId));

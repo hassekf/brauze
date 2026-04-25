@@ -762,6 +762,11 @@ webview.active { display: flex; }
   color: #888;
   flex-shrink: 0;
 }
+.omni-item .omni-favicon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
 .omni-item .omni-text {
   flex: 1;
   min-width: 0;

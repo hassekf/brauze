@@ -9,6 +9,33 @@ const newtabBtn  = document.getElementById('newtab');
 const HOMEPAGE = 'brauze://newtab';
 const isNewtabUrl = (u) => !u || u === HOMEPAGE || u.startsWith('brauze://newtab');
 
+// Quick search shortcuts: digite "gh foo bar" pra buscar no GitHub direto.
+const SEARCH_SHORTCUTS = {
+  gh:   { name: 'GitHub',  template: 'https://github.com/search?q=%s' },
+  npm:  { name: 'npm',     template: 'https://www.npmjs.com/search?q=%s' },
+  mdn:  { name: 'MDN',     template: 'https://developer.mozilla.org/en-US/search?q=%s' },
+  yt:   { name: 'YouTube', template: 'https://www.youtube.com/results?search_query=%s' },
+  so:   { name: 'Stack Overflow', template: 'https://stackoverflow.com/search?q=%s' },
+  wiki: { name: 'Wikipedia', template: 'https://en.wikipedia.org/wiki/Special:Search?search=%s' },
+  gpt:  { name: 'ChatGPT', template: 'https://chat.openai.com/?q=%s' },
+  amz:  { name: 'Amazon',  template: 'https://www.amazon.com.br/s?k=%s' },
+};
+
+function detectShortcut(text) {
+  const t = (text || '').trim();
+  if (!t) return null;
+  const m = t.match(/^(\w+)(?:\s+(.+))?$/);
+  if (!m) return null;
+  const key = m[1].toLowerCase();
+  const sc = SEARCH_SHORTCUTS[key];
+  if (!sc) return null;
+  const query = (m[2] || '').trim();
+  return {
+    key, name: sc.name, query,
+    url: query ? sc.template.replace('%s', encodeURIComponent(query)) : null,
+  };
+}
+
 const tabs = new Map();
 let activeId = null;
 let nextId = 1;
@@ -16,6 +43,8 @@ let nextId = 1;
 function normalizeUrl(input) {
   const raw = input.trim();
   if (!raw) return HOMEPAGE;
+  const sc = detectShortcut(raw);
+  if (sc && sc.url) return sc.url;
   if (/^[a-z]+:\/\//i.test(raw) || raw.startsWith('about:')) return raw;
   // Heurística simples: tem ponto e nada de espaço → URL; senão, busca no Google.
   if (/^[^\s]+\.[^\s]+$/.test(raw)) return 'https://' + raw;
@@ -226,12 +255,28 @@ function positionOmni() {
 
 function iconFor(kind) {
   switch (kind) {
+    case 'shortcut': return '⚡';
     case 'navigate': return '↪';
     case 'tab':      return '⎘';
     case 'history':  return '🕘';
     case 'search':   return '🔍';
     default:         return '·';
   }
+}
+
+function faviconUrlFor(url) {
+  try {
+    const u = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(u.hostname)}&sz=32`;
+  } catch { return null; }
+}
+
+function omniIconHtml(it) {
+  const fav = it.url ? faviconUrlFor(it.url) : null;
+  if (fav) {
+    return `<span class="omni-icon"><img class="omni-favicon" src="${escapeHtml(fav)}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="omni-fallback" style="display:none">${iconFor(it.kind)}</span></span>`;
+  }
+  return `<span class="omni-icon">${iconFor(it.kind)}</span>`;
 }
 
 function renderOmni() {
@@ -246,7 +291,7 @@ function renderOmni() {
       try { secondary = ' · ' + new URL(it.url).hostname; } catch {}
     }
     el.innerHTML =
-      `<span class="omni-icon">${iconFor(it.kind)}</span>` +
+      omniIconHtml(it) +
       `<span class="omni-text">${escapeHtml(it.title || it.query || it.url)}<span class="omni-secondary">${escapeHtml(secondary)}</span></span>` +
       (it.kind === 'tab' ? `<span class="omni-pill">aba</span>` : '');
     el.addEventListener('mousedown', (e) => {
@@ -285,6 +330,13 @@ function isHighConfidence(it) {
 }
 
 function applyItems(items, text) {
+  const sc = detectShortcut(text);
+  if (sc && sc.url) {
+    items = [
+      { kind: 'shortcut', title: `Buscar "${sc.query}" em ${sc.name}`, url: sc.url, score: 400 },
+      ...items.filter((it) => it.url !== sc.url),
+    ];
+  }
   const prevKey = selectedKey();
   omniItems = items;
   if (!items.length) { omniIdx = -1; }

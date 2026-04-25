@@ -747,6 +747,32 @@ webview.active { display: flex; }
 }
 .cli-chip-arrow:hover { background: #34343c; color: #fff; }
 
+/* ----- Phishing warning ----- */
+#phishing-warning {
+  position: fixed;
+  top: 82px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4a1d1d;
+  border: 1px solid #7a3a3a;
+  color: #ffd5d5;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 27;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+#phishing-warning.hidden { display: none; }
+#phishing-warning .ph-icon { font-size: 16px; }
+#phishing-warning button {
+  background: transparent; border: none; color: #ffd5d5; cursor: pointer;
+  font-size: 14px; padding: 0 4px;
+}
+#phishing-warning button:hover { color: #fff; }
+
 /* ----- Password save prompt ----- */
 #pwd-prompt {
   position: fixed;

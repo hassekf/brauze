@@ -3,7 +3,31 @@
 
 const path = require('path');
 const fs   = require('fs');
-const { safeStorage } = require('electron');
+const { safeStorage, systemPreferences } = require('electron');
+const totp = require('./totp');
+
+// Vault unlock state: Touch ID/biometric exigido pra revelar senhas via UI.
+// Autofill silencioso bypassa pra UX fluida (como Chrome faz).
+let unlockedUntil = 0;
+const UNLOCK_DURATION_MS = 5 * 60 * 1000;
+
+async function unlock(reason) {
+  if (Date.now() < unlockedUntil) return true;
+  if (process.platform !== 'darwin' || !systemPreferences.canPromptTouchID()) {
+    unlockedUntil = Date.now() + UNLOCK_DURATION_MS;
+    return true;
+  }
+  try {
+    await systemPreferences.promptTouchID(reason || 'Desbloquear cofre de senhas');
+    unlockedUntil = Date.now() + UNLOCK_DURATION_MS;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function lock() { unlockedUntil = 0; }
+function isUnlocked() { return Date.now() < unlockedUntil; }
 
 let db = null;
 
@@ -73,17 +97,22 @@ function listForOrigin(origin) {
   return db.prepare(`SELECT id, origin, username, last_used_at, use_count FROM passwords WHERE origin = ? ORDER BY last_used_at DESC`).all(o);
 }
 
-function getDecrypted(id) {
+async function getDecrypted(id, { requireAuth = true } = {}) {
   if (!db) return null;
+  if (requireAuth) {
+    const ok = await unlock('Revelar senha salva');
+    if (!ok) return null;
+  }
   const row = db.prepare(`SELECT id, origin, username, password_blob, totp_blob, notes FROM passwords WHERE id = ?`).get(id);
   if (!row) return null;
   let password = '';
   let totpSecret = '';
   try { password = decrypt(row.password_blob); } catch {}
   if (row.totp_blob) { try { totpSecret = decrypt(row.totp_blob); } catch {} }
+  const totpCode = totpSecret ? totp.generate(totpSecret) : '';
   // marca uso
   db.prepare(`UPDATE passwords SET last_used_at = ?, use_count = use_count + 1 WHERE id = ?`).run(Date.now(), id);
-  return { id: row.id, origin: row.origin, username: row.username, password, totpSecret, notes: row.notes || '' };
+  return { id: row.id, origin: row.origin, username: row.username, password, totpSecret, totpCode, notes: row.notes || '' };
 }
 
 function listAll() {
@@ -111,4 +140,4 @@ function update(id, { username, notes }) {
   return r.changes > 0;
 }
 
-module.exports = { init, isAvailable, save, listForOrigin, listAll, getDecrypted, remove, setTOTP, update };
+module.exports = { init, isAvailable, save, listForOrigin, listAll, getDecrypted, remove, setTOTP, update, lock, isUnlocked };

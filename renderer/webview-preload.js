@@ -1,7 +1,24 @@
 // Roda dentro de cada webview (sandboxed). Detecta fingerprinting + session replay
 // e reporta pro main via IPC. Também esconde cookie banners conhecidos via CSS.
 
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, contextBridge } = require('electron');
+
+// Expõe API privilegiada APENAS pra páginas internas brauze://
+try {
+  if (location.protocol === 'brauze:') {
+    contextBridge.exposeInMainWorld('brauzeInternal', {
+      passwords: {
+        list:    ()        => ipcRenderer.invoke('passwords:list-all'),
+        get:     (id)      => ipcRenderer.invoke('passwords:get', id),
+        remove:  (id)      => ipcRenderer.invoke('passwords:remove', id),
+        update:  (id, p)   => ipcRenderer.invoke('passwords:update', id, p),
+        setTOTP: (id, sec) => ipcRenderer.invoke('passwords:set-totp', id, sec),
+        lock:    ()        => ipcRenderer.invoke('passwords:lock'),
+        checkBreach: (id)  => ipcRenderer.invoke('passwords:breach-check', id),
+      },
+    });
+  }
+} catch {}
 
 const counters = { canvas: 0, webgl: 0, audio: 0, fonts: 0, plugins: 0, screen: 0 };
 let lastReportAt = 0;

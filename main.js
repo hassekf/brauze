@@ -17,6 +17,7 @@ const cookies     = require('./cookies');
 const privacy     = require('./privacy');
 const profiles    = require('./profiles');
 const passwords   = require('./passwords');
+const breach      = require('./breach');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
@@ -483,7 +484,13 @@ app.whenReady().then(() => {
   ipcMain.handle('passwords:save',          (_e, payload) => passwords.save(payload));
   ipcMain.handle('passwords:list-origin',   (_e, origin)  => passwords.listForOrigin(origin));
   ipcMain.handle('passwords:list-all',      ()            => passwords.listAll());
-  ipcMain.handle('passwords:get',           (_e, id)      => passwords.getDecrypted(id));
+  ipcMain.handle('passwords:get',           (_e, id, opts)=> passwords.getDecrypted(id, opts || {}));
+  ipcMain.handle('passwords:lock',          ()            => passwords.lock());
+  ipcMain.handle('passwords:breach-check',  async (_e, id) => {
+    const cred = await passwords.getDecrypted(id, { requireAuth: true });
+    if (!cred) return { ok: false };
+    return await breach.check(cred.password);
+  });
   ipcMain.handle('passwords:remove',        (_e, id)      => passwords.remove(id));
   ipcMain.handle('passwords:set-totp',      (_e, id, sec) => passwords.setTOTP(id, sec));
   ipcMain.handle('passwords:update',        (_e, id, p)   => passwords.update(id, p));

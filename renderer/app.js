@@ -1802,22 +1802,69 @@ async function submitPrompt(question) {
   asking = false;
 }
 
-// ---- Autofill de senhas ----
+// ---- Autofill de senhas + phishing detection ----
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const curr = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+async function detectPhishing(currentOrigin) {
+  let currentHost;
+  try { currentHost = new URL(currentOrigin).hostname; } catch { return null; }
+  const all = await window.brauze.passwords.listAll();
+  for (const item of all) {
+    let savedHost;
+    try { savedHost = new URL(item.origin).hostname; } catch { continue; }
+    if (savedHost === currentHost) return null; // exact match em outro lugar — não é typosquat
+    const minLen = Math.min(currentHost.length, savedHost.length);
+    if (minLen < 6) continue;
+    const dist = levenshtein(currentHost, savedHost);
+    if (dist > 0 && dist <= 2) return { suspicious: true, similarTo: savedHost };
+  }
+  return null;
+}
+
+const PHISHING_WARN  = document.getElementById('phishing-warning');
+const PHISHING_TEXT  = document.getElementById('phishing-text');
+document.getElementById('phishing-close').addEventListener('click', () => PHISHING_WARN.classList.add('hidden'));
+
+function showPhishingWarning(currentHost, similarTo) {
+  PHISHING_TEXT.textContent = `Atenção: ${currentHost} parece imitar ${similarTo}. Pode ser phishing — não preencha senhas.`;
+  PHISHING_WARN.classList.remove('hidden');
+}
+
 async function triggerAutofill(view) {
   const url = safeGetUrl(view);
   if (!url || !/^https?:/i.test(url)) return;
-  let origin;
-  try { origin = new URL(url).origin; } catch { return; }
+  let origin, host;
+  try { origin = new URL(url).origin; host = new URL(url).hostname; } catch { return; }
   const saved = await window.brauze.passwords.listOrigin(origin);
-  if (!saved.length) return;
-  const top = saved[0]; // mais recente
-  const cred = await window.brauze.passwords.get(top.id);
+  if (!saved.length) {
+    // Sem creds salvos — mas pode estar visitando typosquat de site que tem.
+    const ph = await detectPhishing(origin);
+    if (ph && ph.suspicious) showPhishingWarning(host, ph.similarTo);
+    return;
+  }
+  const top = saved[0];
+  // Autofill silencioso — não exige Touch ID (UX fluida estilo Chrome)
+  const cred = await window.brauze.passwords.get(top.id, { requireAuth: false });
   if (!cred || !cred.password) return;
-  const args = JSON.stringify(cred.username) + ',' + JSON.stringify(cred.password);
+  const args = JSON.stringify(cred.username) + ',' + JSON.stringify(cred.password) + ',' + JSON.stringify(cred.totpCode || '');
   try { view.executeJavaScript(`(${AUTOFILL_FN_STR})(${args})`, false); } catch {}
 }
 
-const AUTOFILL_FN_STR = `function(u, p){
+const AUTOFILL_FN_STR = `function(u, p, totp){
   function setVal(el, v){
     try {
       const proto = Object.getPrototypeOf(el);
@@ -1827,9 +1874,10 @@ const AUTOFILL_FN_STR = `function(u, p){
       el.dispatchEvent(new Event('change', { bubbles: true }));
     } catch(e) {}
   }
-  function fill(){
+  function fillPw(){
     const pw = document.querySelector('input[type="password"]:not([disabled]):not([readonly])');
     if (!pw) return false;
+    if (pw.__brauzeFilled) return true;
     const form = pw.form || pw.closest('form') || document;
     let user = form.querySelector('input[autocomplete="username"]')
             || form.querySelector('input[type="email"]:not([disabled]):not([readonly])')
@@ -1837,12 +1885,30 @@ const AUTOFILL_FN_STR = `function(u, p){
             || form.querySelector('input[type="text"]:not([disabled]):not([readonly])');
     if (user && u) setVal(user, u);
     if (p) setVal(pw, p);
+    pw.__brauzeFilled = true;
     return true;
   }
-  if (fill()) return;
-  const obs = new MutationObserver(function(){ if (fill()) obs.disconnect(); });
+  function fillTotp(){
+    if (!totp) return false;
+    const sels = [
+      'input[autocomplete="one-time-code"]:not([disabled]):not([readonly])',
+      'input[name*="otp" i]:not([disabled]):not([readonly])',
+      'input[id*="otp" i]:not([disabled]):not([readonly])',
+      'input[name*="totp" i]:not([disabled]):not([readonly])',
+      'input[name*="2fa" i]:not([disabled]):not([readonly])',
+      'input[name*="code" i][type="text"]:not([disabled]):not([readonly])',
+      'input[type="text"][maxlength="6"]:not([disabled]):not([readonly])',
+    ];
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (el && !el.__brauzeFilled) { setVal(el, totp); el.__brauzeFilled = true; return true; }
+    }
+    return false;
+  }
+  fillPw(); fillTotp();
+  const obs = new MutationObserver(function(){ fillPw(); fillTotp(); });
   try { obs.observe(document.body || document.documentElement, { childList:true, subtree:true }); } catch(e) {}
-  setTimeout(function(){ try { obs.disconnect(); } catch(e) {} }, 8000);
+  setTimeout(function(){ try { obs.disconnect(); } catch(e) {} }, 12000);
 }`;
 
 // ---- Privacy: monkey-patches injetados em cada page ----

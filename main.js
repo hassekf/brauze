@@ -348,6 +348,7 @@ app.whenReady().then(() => {
   ipcMain.handle('omnibox:query-local',       (_e, payload) => omnibox.queryLocal(payload || {}));
   ipcMain.handle('omnibox:query-suggestions', (_e, text)    => omnibox.querySuggestions(text));
   ipcMain.on('omnibox:record-visit',          (_e, payload) => history.recordVisit(payload || {}));
+  ipcMain.handle('history:recent',            (_e, limit)   => history.recent(limit || 20));
 
   // Preconnect: DNS + TCP + TLS handshake antecipado, sem baixar HTML.
   const preconnectCache = new Map(); // url → timestamp

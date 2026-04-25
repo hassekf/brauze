@@ -99,4 +99,14 @@ function query(text, limit = 6) {
   }));
 }
 
-module.exports = { init, recordVisit, query, isIgnoredUrl };
+function recent(limit = 20) {
+  if (!db) return [];
+  return db.prepare(`
+    SELECT url, title, visit_count, last_visit_at
+    FROM urls
+    ORDER BY last_visit_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+module.exports = { init, recordVisit, query, recent, isIgnoredUrl };

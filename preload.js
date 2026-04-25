@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('brauze', {
     querySuggestions: (text)    => ipcRenderer.invoke('omnibox:query-suggestions', text),
     recordVisit:      (payload) => ipcRenderer.send('omnibox:record-visit', payload),
     preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
+    recentHistory:    (limit)   => ipcRenderer.invoke('history:recent', limit),
   },
   herd: {
     resolve: (host) => ipcRenderer.invoke('herd:resolve', host),

@@ -73,6 +73,13 @@ contextBridge.exposeInMainWorld('brauze', {
       return () => ipcRenderer.removeListener('window:fullscreen', l);
     },
   },
+  shortcuts: {
+    onFire: (cb) => {
+      const l = (_e, action) => cb(action);
+      ipcRenderer.on('shortcut:fire', l);
+      return () => ipcRenderer.removeListener('shortcut:fire', l);
+    },
+  },
   omnibox: {
     queryLocal:       (payload) => ipcRenderer.invoke('omnibox:query-local', payload),
     querySuggestions: (text)    => ipcRenderer.invoke('omnibox:query-suggestions', text),

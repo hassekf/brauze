@@ -135,14 +135,30 @@ app.whenReady().then(() => {
       sendOpenTab(url);
       return { action: 'deny' };
     });
-    // Cmd/Ctrl+Opt+I sempre vira toggle do nosso DevTools docked, nunca o chrome inspect.
+    // Atalhos globais: interceptados aqui pra funcionar mesmo com foco dentro do webview.
+    const SHORTCUTS = [
+      { code: 'KeyI', alt: true,  action: 'devtools:toggle' },
+      { code: 'KeyP',              action: 'qs:open' },
+      { code: 'KeyF',              action: 'find:open' },
+      { code: 'KeyT', shift: true, action: 'tab:reopen' },
+      { code: 'KeyT',              action: 'tab:new' },
+      { code: 'KeyW',              action: 'tab:close' },
+      { code: 'KeyL',              action: 'address:focus' },
+      { code: 'KeyR',              action: 'tab:reload' },
+    ];
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
-      if ((input.meta || input.control) && input.alt && input.code === 'KeyI') {
+      const ctrl = input.meta || input.control;
+      if (!ctrl) return;
+      for (const sc of SHORTCUTS) {
+        if (input.code !== sc.code) continue;
+        if ((sc.alt   || false) !== (input.alt   || false)) continue;
+        if ((sc.shift || false) !== (input.shift || false)) continue;
         event.preventDefault();
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('devtools:toggle-request');
+          mainWindow.webContents.send('shortcut:fire', sc.action);
         }
+        return;
       }
     });
   });

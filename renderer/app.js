@@ -492,20 +492,7 @@ addressEl.addEventListener('blur', () => {
 });
 window.addEventListener('resize', () => { if (omniOpen) positionOmni(); });
 
-// Atalhos
-window.addEventListener('keydown', (e) => {
-  const ctrl = e.ctrlKey || e.metaKey;
-  if (ctrl && e.shiftKey && e.key.toLowerCase() === 't') {
-    e.preventDefault();
-    const url = closedStack.pop();
-    if (url) createTab(url);
-    return;
-  }
-  if (ctrl && e.key.toLowerCase() === 't') { e.preventDefault(); createTab(); }
-  if (ctrl && e.key.toLowerCase() === 'w') { e.preventDefault(); if (activeId !== null) closeTab(activeId); }
-  if (ctrl && e.key.toLowerCase() === 'l') { e.preventDefault(); addressEl.focus(); }
-  if (ctrl && e.key.toLowerCase() === 'r') { e.preventDefault(); tabs.get(activeId)?.view.reload(); }
-});
+// Atalhos: roteados via main (before-input-event) → window.brauze.shortcuts.onFire
 
 // ---- Project Radar ----
 const radarItem      = document.getElementById('radar-item');
@@ -1296,12 +1283,7 @@ QS_INPUT.addEventListener('keydown', (e) => {
 });
 QS_BACKDROP.addEventListener('click', closeQs);
 
-window.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyP') {
-    e.preventDefault();
-    openQs();
-  }
-});
+// Cmd+P: roteado via shortcuts.onFire
 
 // ---- Find on page ----
 const FIND_BAR     = document.getElementById('find-bar');
@@ -1356,18 +1338,30 @@ FIND_PREV.addEventListener('click',  () => findInActiveView(FIND_INPUT.value, { 
 FIND_NEXT.addEventListener('click',  () => findInActiveView(FIND_INPUT.value, { forward: true,  findNext: true }));
 FIND_CLOSE.addEventListener('click', closeFind);
 
-window.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyF') {
-    e.preventDefault();
-    openFind();
-  }
-});
+// Cmd+F: roteado via shortcuts.onFire
 
 window.brauze.window.onFullscreen((isFs) => {
   document.body.classList.toggle('fullscreen', !!isFs);
 });
 
 window.brauze.devtools.onToggleRequest(() => toggleDevTools());
+
+window.brauze.shortcuts.onFire((action) => {
+  switch (action) {
+    case 'devtools:toggle': toggleDevTools(); break;
+    case 'qs:open':         openQs(); break;
+    case 'find:open':       openFind(); break;
+    case 'tab:new':         createTab(); break;
+    case 'tab:close':       if (activeId !== null) closeTab(activeId); break;
+    case 'tab:reopen': {
+      const url = closedStack.pop();
+      if (url) createTab(url);
+      break;
+    }
+    case 'address:focus':   addressEl.focus(); break;
+    case 'tab:reload':      tabs.get(activeId)?.view.reload(); break;
+  }
+});
 
 window.brauze.devtools.onReattached(() => {
   devtoolsOpen = true;

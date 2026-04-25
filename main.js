@@ -21,6 +21,20 @@ const breach      = require('./breach');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
+
+// Auto-trust certs de localhost/.test/.local (Herd, Valet, mkcert, dev servers).
+const TRUSTED_LOCAL_HOSTS = /(^|\.)(test|local|localhost)$|^localhost(:\d+)?$|^127\./i;
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  try {
+    const host = new URL(url).hostname;
+    if (TRUSTED_LOCAL_HOSTS.test(host)) {
+      event.preventDefault();
+      callback(true);
+      return;
+    }
+  } catch {}
+  callback(false);
+});
 // Bloqueia autoplay de áudio/vídeo até gesto do usuário.
 app.commandLine.appendSwitch('autoplay-policy', 'user-gesture-required');
 

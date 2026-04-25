@@ -164,6 +164,7 @@ function createTab(url = HOMEPAGE) {
   view.addEventListener('dom-ready', () => {
     try { view.executeJavaScript(FP_PATCHES_JS, false); } catch {}
     try { view.insertCSS(COOKIE_BANNERS_CSS); } catch {}
+    triggerAutofill(view).catch(() => {});
   });
 
   tabEl.addEventListener('click', (e) => {
@@ -1348,6 +1349,50 @@ window.brauze.window.onFullscreen((isFs) => {
   document.body.classList.toggle('fullscreen', !!isFs);
 });
 
+// ---- Password save prompt ----
+const PWD_PROMPT       = document.getElementById('pwd-prompt');
+const PWD_PROMPT_TEXT  = document.getElementById('pwd-prompt-text');
+const PWD_PROMPT_SAVE  = document.getElementById('pwd-prompt-save');
+const PWD_PROMPT_SKIP  = document.getElementById('pwd-prompt-skip');
+const PWD_PROMPT_CLOSE = document.getElementById('pwd-prompt-close');
+let pwdPromptWcId = null;
+
+function showPwdPrompt({ wcId, origin, username }) {
+  pwdPromptWcId = wcId;
+  let host = '';
+  try { host = new URL(origin).hostname; } catch { host = origin; }
+  PWD_PROMPT_TEXT.textContent = username
+    ? `Salvar senha de ${username} em ${host}?`
+    : `Salvar senha em ${host}?`;
+  PWD_PROMPT.classList.remove('hidden');
+}
+function hidePwdPrompt(dismiss = false) {
+  if (dismiss && pwdPromptWcId != null) {
+    window.brauze.passwords.dismissSave(pwdPromptWcId).catch(() => {});
+  }
+  pwdPromptWcId = null;
+  PWD_PROMPT.classList.add('hidden');
+}
+PWD_PROMPT_SAVE.addEventListener('click', async () => {
+  if (pwdPromptWcId == null) return;
+  await window.brauze.passwords.confirmSave(pwdPromptWcId);
+  hidePwdPrompt(false);
+});
+PWD_PROMPT_SKIP.addEventListener('click',  () => hidePwdPrompt(true));
+PWD_PROMPT_CLOSE.addEventListener('click', () => hidePwdPrompt(true));
+
+window.brauze.passwords.onSavePrompt((p) => {
+  // Só mostra se a aba ativa é a que disparou
+  const view = getActiveWebview();
+  let activeWcId; try { activeWcId = view?.getWebContentsId(); } catch {}
+  if (activeWcId !== p.wcId) {
+    // Aba diferente: descarta sem prompt
+    window.brauze.passwords.dismissSave(p.wcId).catch(() => {});
+    return;
+  }
+  showPwdPrompt(p);
+});
+
 window.brauze.devtools.onToggleRequest(() => toggleDevTools());
 
 window.brauze.shortcuts.onFire((action) => {
@@ -1757,6 +1802,49 @@ async function submitPrompt(question) {
   asking = false;
 }
 
+// ---- Autofill de senhas ----
+async function triggerAutofill(view) {
+  const url = safeGetUrl(view);
+  if (!url || !/^https?:/i.test(url)) return;
+  let origin;
+  try { origin = new URL(url).origin; } catch { return; }
+  const saved = await window.brauze.passwords.listOrigin(origin);
+  if (!saved.length) return;
+  const top = saved[0]; // mais recente
+  const cred = await window.brauze.passwords.get(top.id);
+  if (!cred || !cred.password) return;
+  const args = JSON.stringify(cred.username) + ',' + JSON.stringify(cred.password);
+  try { view.executeJavaScript(`(${AUTOFILL_FN_STR})(${args})`, false); } catch {}
+}
+
+const AUTOFILL_FN_STR = `function(u, p){
+  function setVal(el, v){
+    try {
+      const proto = Object.getPrototypeOf(el);
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      (desc && desc.set ? desc.set : function(x){ this.value = x; }).call(el, v);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch(e) {}
+  }
+  function fill(){
+    const pw = document.querySelector('input[type="password"]:not([disabled]):not([readonly])');
+    if (!pw) return false;
+    const form = pw.form || pw.closest('form') || document;
+    let user = form.querySelector('input[autocomplete="username"]')
+            || form.querySelector('input[type="email"]:not([disabled]):not([readonly])')
+            || form.querySelector('input[type="tel"]:not([disabled]):not([readonly])')
+            || form.querySelector('input[type="text"]:not([disabled]):not([readonly])');
+    if (user && u) setVal(user, u);
+    if (p) setVal(pw, p);
+    return true;
+  }
+  if (fill()) return;
+  const obs = new MutationObserver(function(){ if (fill()) obs.disconnect(); });
+  try { obs.observe(document.body || document.documentElement, { childList:true, subtree:true }); } catch(e) {}
+  setTimeout(function(){ try { obs.disconnect(); } catch(e) {} }, 8000);
+}`;
+
 // ---- Privacy: monkey-patches injetados em cada page ----
 const FP_PATCHES_JS = `(function(){
   if (window.__brauzeFP) return; window.__brauzeFP = true;
@@ -1899,17 +1987,25 @@ function togglePrivacy() {
   if (PP_POPOVER.classList.contains('hidden')) {
     positionPrivacyPopover();
     PP_POPOVER.classList.remove('hidden');
+    popoverBackdrop.classList.remove('hidden');
     refreshPrivacy();
     ppTimer = setInterval(refreshPrivacy, 1500);
   } else {
     PP_POPOVER.classList.add('hidden');
+    popoverBackdrop.classList.add('hidden');
     if (ppTimer) { clearInterval(ppTimer); ppTimer = null; }
   }
 }
 
-SHIELD.addEventListener('click', togglePrivacy);
+SHIELD.addEventListener('click', (e) => { e.stopPropagation(); togglePrivacy(); });
 PP_CLOSE.addEventListener('click', togglePrivacy);
 window.addEventListener('resize', () => { if (!PP_POPOVER.classList.contains('hidden')) positionPrivacyPopover(); });
+
+// Backdrop universal: clique fora fecha qualquer popover registrado
+popoverBackdrop.addEventListener('click', () => {
+  if (!PP_POPOVER.classList.contains('hidden')) togglePrivacy();
+  if (!PROFILE_POP.classList.contains('hidden')) closeProfilePopover();
+});
 
 // ---- Profile switcher ----
 const PROFILE_BTN = document.getElementById('profile-btn');
@@ -1950,13 +2046,20 @@ function positionProfilePopover() {
   PROFILE_POP.style.left = Math.min(r.left - 220, window.innerWidth - 280) + 'px';
 }
 
-PROFILE_BTN.addEventListener('click', async () => {
+function closeProfilePopover() {
+  PROFILE_POP.classList.add('hidden');
+  popoverBackdrop.classList.add('hidden');
+}
+
+PROFILE_BTN.addEventListener('click', async (e) => {
+  e.stopPropagation();
   if (PROFILE_POP.classList.contains('hidden')) {
     positionProfilePopover();
     PROFILE_POP.classList.remove('hidden');
+    popoverBackdrop.classList.remove('hidden');
     await refreshProfileList();
   } else {
-    PROFILE_POP.classList.add('hidden');
+    closeProfilePopover();
   }
 });
 
@@ -1965,12 +2068,6 @@ PROFILE_NEW.addEventListener('click', async () => {
   if (!name) return;
   await window.brauze.profiles.create({ name });
   await refreshProfileList();
-});
-
-document.addEventListener('click', (e) => {
-  if (!PROFILE_POP.contains(e.target) && e.target !== PROFILE_BTN) {
-    PROFILE_POP.classList.add('hidden');
-  }
 });
 
 // Boot

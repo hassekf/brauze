@@ -63,4 +63,57 @@ document.addEventListener('DOMContentLoaded', () => {
       childList: true, subtree: true,
     });
   } catch {}
+  installFormHook();
 });
+
+// ---- Detector de submit em forms com password ----
+function findUsernameInput(form, passwordInput) {
+  // 1. autocomplete="username"
+  let u = form.querySelector('input[autocomplete="username"]');
+  if (u && u.value) return u;
+  // 2. campos type=email/text antes do password
+  const inputs = Array.from(form.querySelectorAll('input'));
+  const pwIdx = inputs.indexOf(passwordInput);
+  for (let i = pwIdx - 1; i >= 0; i--) {
+    const it = inputs[i];
+    if (!it.disabled && (it.type === 'email' || it.type === 'text' || it.type === 'tel')) {
+      if (it.value) return it;
+    }
+  }
+  // 3. último recurso: qualquer email/text com valor
+  for (const it of inputs) {
+    if (!it.disabled && (it.type === 'email' || it.type === 'text' || it.type === 'tel') && it.value) return it;
+  }
+  return null;
+}
+
+function captureFormSubmit(form) {
+  if (form.__brauzeHooked) return;
+  form.__brauzeHooked = true;
+  form.addEventListener('submit', () => {
+    try {
+      const pw = form.querySelector('input[type="password"]');
+      if (!pw || !pw.value) return;
+      const userInput = findUsernameInput(form, pw);
+      const username = userInput ? userInput.value : '';
+      const password = pw.value;
+      const origin = location.origin;
+      ipcRenderer.send('passwords:form-submit', { origin, username, password });
+    } catch {}
+  }, true);
+}
+
+function scanForms() {
+  for (const form of document.querySelectorAll('form')) {
+    if (form.querySelector('input[type="password"]')) captureFormSubmit(form);
+  }
+}
+
+function installFormHook() {
+  scanForms();
+  try {
+    new MutationObserver(() => scanForms()).observe(document.body || document.documentElement, {
+      childList: true, subtree: true,
+    });
+  } catch {}
+}

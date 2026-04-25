@@ -85,6 +85,23 @@ contextBridge.exposeInMainWorld('brauze', {
     preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
     recentHistory:    (limit)   => ipcRenderer.invoke('history:recent', limit),
   },
+  passwords: {
+    save:        (p)        => ipcRenderer.invoke('passwords:save', p),
+    listOrigin:  (origin)   => ipcRenderer.invoke('passwords:list-origin', origin),
+    listAll:     ()         => ipcRenderer.invoke('passwords:list-all'),
+    get:         (id)       => ipcRenderer.invoke('passwords:get', id),
+    remove:      (id)       => ipcRenderer.invoke('passwords:remove', id),
+    setTOTP:     (id, sec)  => ipcRenderer.invoke('passwords:set-totp', id, sec),
+    update:      (id, p)    => ipcRenderer.invoke('passwords:update', id, p),
+    available:   ()         => ipcRenderer.invoke('passwords:available'),
+    confirmSave: (wcId)     => ipcRenderer.invoke('passwords:confirm-save', wcId),
+    dismissSave: (wcId)     => ipcRenderer.invoke('passwords:dismiss-save', wcId),
+    onSavePrompt: (cb) => {
+      const l = (_e, payload) => cb(payload);
+      ipcRenderer.on('passwords:save-prompt', l);
+      return () => ipcRenderer.removeListener('passwords:save-prompt', l);
+    },
+  },
   profiles: {
     list:    ()           => ipcRenderer.invoke('profiles:list'),
     active:  ()           => ipcRenderer.invoke('profiles:active'),

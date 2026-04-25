@@ -747,6 +747,50 @@ webview.active { display: flex; }
 }
 .cli-chip-arrow:hover { background: #34343c; color: #fff; }
 
+/* ----- Password save prompt ----- */
+#pwd-prompt {
+  position: fixed;
+  top: 82px;
+  right: 16px;
+  background: #25252b;
+  border: 1px solid #34343c;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 26;
+  font-size: 12px;
+  color: #d8d8d8;
+  max-width: 420px;
+}
+#pwd-prompt.hidden { display: none; }
+#pwd-prompt button {
+  background: #2a2a30;
+  border: 1px solid #34343c;
+  color: #d8d8d8;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#pwd-prompt button:hover { background: #34343c; color: #fff; }
+#pwd-prompt #pwd-prompt-save {
+  background: #2d3a52;
+  border-color: #3a4a6a;
+  color: #8ab4ff;
+}
+#pwd-prompt #pwd-prompt-save:hover { background: #3a4a6a; color: #fff; }
+#pwd-prompt #pwd-prompt-close {
+  border: none;
+  background: transparent;
+  color: #888;
+  padding: 0 4px;
+  font-size: 14px;
+}
+#pwd-prompt #pwd-prompt-close:hover { background: transparent; color: #fff; }
+
 /* ----- Shield + Privacy popover ----- */
 .shield-btn { font-size: 14px; }
 

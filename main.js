@@ -16,6 +16,7 @@ const permissions = require('./permissions');
 const cookies     = require('./cookies');
 const privacy     = require('./privacy');
 const profiles    = require('./profiles');
+const passwords   = require('./passwords');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
@@ -124,6 +125,7 @@ app.whenReady().then(() => {
   history.init({ userDataPath: profilePath });
   permissions.load(profilePath);
   cookies.load(profilePath);
+  passwords.init({ profilePath });
 
   // Permission handler: nega sensíveis por default na sessão das webviews
   const brauzeSession = session.fromPartition(sessionPart);
@@ -446,6 +448,46 @@ app.whenReady().then(() => {
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
   });
+
+  // ---- Passwords ----
+  // Pending saves (vindos de form-submit no webview-preload).
+  // Renderer pede confirmação via UI; senha nunca sai do main.
+  const pendingSaves = new Map(); // wcId → { origin, username, password, ts }
+  setInterval(() => {
+    const cutoff = Date.now() - 5 * 60 * 1000;
+    for (const [id, p] of pendingSaves) if (p.ts < cutoff) pendingSaves.delete(id);
+  }, 60_000);
+
+  ipcMain.on('passwords:form-submit', (e, payload) => {
+    if (!payload || !payload.origin || !payload.password) return;
+    pendingSaves.set(e.sender.id, { ...payload, ts: Date.now() });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('passwords:save-prompt', {
+        wcId: e.sender.id,
+        origin: payload.origin,
+        username: payload.username || '',
+      });
+    }
+  });
+  ipcMain.handle('passwords:confirm-save', (_e, wcId) => {
+    const p = pendingSaves.get(wcId);
+    if (!p) return null;
+    pendingSaves.delete(wcId);
+    return passwords.save(p);
+  });
+  ipcMain.handle('passwords:dismiss-save', (_e, wcId) => {
+    pendingSaves.delete(wcId);
+    return true;
+  });
+
+  ipcMain.handle('passwords:save',          (_e, payload) => passwords.save(payload));
+  ipcMain.handle('passwords:list-origin',   (_e, origin)  => passwords.listForOrigin(origin));
+  ipcMain.handle('passwords:list-all',      ()            => passwords.listAll());
+  ipcMain.handle('passwords:get',           (_e, id)      => passwords.getDecrypted(id));
+  ipcMain.handle('passwords:remove',        (_e, id)      => passwords.remove(id));
+  ipcMain.handle('passwords:set-totp',      (_e, id, sec) => passwords.setTOTP(id, sec));
+  ipcMain.handle('passwords:update',        (_e, id, p)   => passwords.update(id, p));
+  ipcMain.handle('passwords:available',     ()            => passwords.isAvailable());
 
   // ---- Profiles ----
   ipcMain.handle('profiles:list',     ()        => profiles.list());

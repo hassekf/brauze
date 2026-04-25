@@ -13,6 +13,7 @@ const herd        = require('./herd');
 const history     = require('./history');
 const omnibox     = require('./omnibox');
 const permissions = require('./permissions');
+const cookies     = require('./cookies');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
@@ -111,6 +112,7 @@ app.whenReady().then(() => {
   watchedFolders.init({ userDataPath: app.getPath('userData') });
   history.init({ userDataPath: app.getPath('userData') });
   permissions.load(app.getPath('userData'));
+  cookies.load(app.getPath('userData'));
 
   // Permission handler: nega sensíveis por default na sessão das webviews
   const brauzeSession = session.fromPartition('persist:brauze');
@@ -124,6 +126,9 @@ app.whenReady().then(() => {
   brauzeSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
     return permissions.decide(requestingOrigin || '', permission);
   });
+
+  // Bloqueia third-party cookies por default (com whitelist em cookies-3p-allow.json)
+  cookies.attachToSession(brauzeSession);
 
   // Adblock na sessão compartilhada das webviews (`persist:brauze`)
   // — apenas network blocking, com whitelist por domínio.
@@ -423,6 +428,14 @@ app.whenReady().then(() => {
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
   });
+
+  // ---- Cookies ----
+  ipcMain.handle('cookies:list-allowed-3p', ()         => cookies.listAllowed());
+  ipcMain.handle('cookies:allow-3p',        (_e, h)    => cookies.allow3P(h));
+  ipcMain.handle('cookies:disallow-3p',     (_e, h)    => cookies.disallow3P(h));
+  ipcMain.handle('cookies:for-origin',      (_e, o)    => cookies.listForOrigin(brauzeSession, o));
+  ipcMain.handle('cookies:clear-origin',    (_e, o)    => cookies.clearForOrigin(brauzeSession, o));
+  ipcMain.handle('cookies:clear-all',       ()         => cookies.clearAll(brauzeSession));
 
   // ---- Permissions ----
   ipcMain.handle('permissions:list',  ()                 => permissions.listOrigins());

@@ -148,6 +148,13 @@ function createTab(url = HOMEPAGE) {
   });
   view.addEventListener('did-start-loading', () => { tabEl.classList.add('loading'); updateNav(); });
   view.addEventListener('did-stop-loading',  () => { tabEl.classList.remove('loading'); updateNav(); });
+  view.addEventListener('found-in-page', (e) => {
+    if (id !== activeId) return;
+    const r = e.result || {};
+    if (r.activeMatchOrdinal != null && r.matches != null) {
+      FIND_COUNTER.textContent = `${r.activeMatchOrdinal}/${r.matches}`;
+    }
+  });
 
   tabEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('close')) {
@@ -1137,6 +1144,66 @@ window.addEventListener('mouseup', () => {
 
 window.addEventListener('resize', () => { if (devtoolsOpen) pushDevToolsBounds(); });
 new ResizeObserver(() => { if (devtoolsOpen) pushDevToolsBounds(); }).observe(DEVTOOLS_HOST);
+
+// ---- Find on page ----
+const FIND_BAR     = document.getElementById('find-bar');
+const FIND_INPUT   = document.getElementById('find-input');
+const FIND_COUNTER = document.getElementById('find-counter');
+const FIND_PREV    = document.getElementById('find-prev');
+const FIND_NEXT    = document.getElementById('find-next');
+const FIND_CLOSE   = document.getElementById('find-close');
+
+let findOpen = false;
+let findRequestId = 0;
+
+function findInActiveView(text, opts = {}) {
+  const view = getActiveWebview();
+  if (!view) return;
+  if (!text) {
+    try { view.stopFindInPage('clearSelection'); } catch {}
+    FIND_COUNTER.textContent = '0/0';
+    return;
+  }
+  try { view.findInPage(text, opts); }
+  catch (err) { console.warn('[find]', err.message); }
+}
+
+function openFind() {
+  if (findOpen) { FIND_INPUT.focus(); FIND_INPUT.select(); return; }
+  findOpen = true;
+  FIND_BAR.classList.remove('hidden');
+  FIND_INPUT.value = '';
+  FIND_COUNTER.textContent = '0/0';
+  FIND_INPUT.focus();
+}
+function closeFind() {
+  if (!findOpen) return;
+  findOpen = false;
+  FIND_BAR.classList.add('hidden');
+  const view = getActiveWebview();
+  if (view) { try { view.stopFindInPage('clearSelection'); } catch {} }
+}
+
+FIND_INPUT.addEventListener('input', () => {
+  findInActiveView(FIND_INPUT.value, { findNext: false });
+});
+FIND_INPUT.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    findInActiveView(FIND_INPUT.value, { forward: !e.shiftKey, findNext: true });
+  }
+});
+FIND_PREV.addEventListener('click',  () => findInActiveView(FIND_INPUT.value, { forward: false, findNext: true }));
+FIND_NEXT.addEventListener('click',  () => findInActiveView(FIND_INPUT.value, { forward: true,  findNext: true }));
+FIND_CLOSE.addEventListener('click', closeFind);
+
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyF') {
+    e.preventDefault();
+    openFind();
+  }
+});
 
 window.brauze.window.onFullscreen((isFs) => {
   document.body.classList.toggle('fullscreen', !!isFs);

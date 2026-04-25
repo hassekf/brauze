@@ -104,26 +104,71 @@ function findUsernameInput(form, passwordInput) {
   return null;
 }
 
+function reportCredential(username, password) {
+  if (!password) return;
+  try {
+    ipcRenderer.send('passwords:form-submit', {
+      origin: location.origin,
+      username: username || '',
+      password,
+    });
+  } catch {}
+}
+
+function captureFromForm(form) {
+  const pw = form.querySelector('input[type="password"]:not([disabled])');
+  if (!pw || !pw.value) return false;
+  const userInput = findUsernameInput(form, pw);
+  reportCredential(userInput ? userInput.value : '', pw.value);
+  return true;
+}
+
+function captureAnywhereOnPage() {
+  const pw = document.querySelector('input[type="password"]:not([disabled])');
+  if (!pw || !pw.value) return false;
+  const form = pw.closest('form');
+  if (form) return captureFromForm(form);
+  // Sem form: tenta achar username em inputs irmãos visíveis
+  const allInputs = Array.from(document.querySelectorAll('input'));
+  const pwIdx = allInputs.indexOf(pw);
+  let userVal = '';
+  for (let i = pwIdx - 1; i >= 0; i--) {
+    const it = allInputs[i];
+    if (!it.disabled && (it.type === 'email' || it.type === 'text' || it.type === 'tel') && it.value) {
+      userVal = it.value; break;
+    }
+  }
+  if (!userVal) {
+    for (const it of allInputs) {
+      if (!it.disabled && (it.type === 'email' || it.type === 'text' || it.type === 'tel') && it.value) {
+        userVal = it.value; break;
+      }
+    }
+  }
+  reportCredential(userVal, pw.value);
+  return true;
+}
+
 function captureFormSubmit(form) {
   if (form.__brauzeHooked) return;
   form.__brauzeHooked = true;
-  form.addEventListener('submit', () => {
-    try {
-      const pw = form.querySelector('input[type="password"]');
-      if (!pw || !pw.value) return;
-      const userInput = findUsernameInput(form, pw);
-      const username = userInput ? userInput.value : '';
-      const password = pw.value;
-      const origin = location.origin;
-      ipcRenderer.send('passwords:form-submit', { origin, username, password });
-    } catch {}
-  }, true);
+  form.addEventListener('submit', () => { try { captureFromForm(form); } catch {} }, true);
 }
 
 function scanForms() {
   for (const form of document.querySelectorAll('form')) {
     if (form.querySelector('input[type="password"]')) captureFormSubmit(form);
   }
+}
+
+// Heurística pra botões "login"/"entrar"/etc — captura mesmo em SPAs sem form submit
+const LOGIN_BUTTON_RE = /(login|log\s*in|sign\s*in|entrar|acessar|continuar|continue|enviar|submit|próximo|proximo|next)/i;
+function isLoginButton(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag !== 'BUTTON' && !(tag === 'INPUT' && /^(submit|button)$/i.test(el.type))) return false;
+  const text = (el.value || el.textContent || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+  return LOGIN_BUTTON_RE.test(text);
 }
 
 function installFormHook() {
@@ -133,4 +178,23 @@ function installFormHook() {
       childList: true, subtree: true,
     });
   } catch {}
+
+  // Click em botão tipo "Entrar/Login" → captura senha digitada
+  document.addEventListener('click', (e) => {
+    try {
+      const btn = e.target.closest('button, input[type="submit"], input[type="button"]');
+      if (!btn || !isLoginButton(btn)) return;
+      captureAnywhereOnPage();
+    } catch {}
+  }, true);
+
+  // Enter dentro de password input (login sem form submit)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target && e.target.type === 'password' && e.target.value) {
+      try { captureAnywhereOnPage(); } catch {}
+    }
+  }, true);
+
+  // Fallback: pagehide pega caso a página feche/navegue com password preenchido
+  window.addEventListener('pagehide', () => { try { captureAnywhereOnPage(); } catch {} });
 }

@@ -109,11 +109,16 @@ app.whenReady().then(() => {
   history.init({ userDataPath: app.getPath('userData') });
 
   // Adblock na sessão compartilhada das webviews (`persist:brauze`).
-  // Roda em paralelo — não bloqueia abertura da janela.
-  adblock.init({
-    userDataPath: app.getPath('userData'),
-    session: session.fromPartition('persist:brauze'),
-  }).catch((err) => console.error('[adblock] erro:', err));
+  // Default OFF até termos bypass per-domain (quebra YouTube etc).
+  // Reativa com BRAUZE_ADBLOCK=1 npm start
+  if (process.env.BRAUZE_ADBLOCK) {
+    adblock.init({
+      userDataPath: app.getPath('userData'),
+      session: session.fromPartition('persist:brauze'),
+    }).catch((err) => console.error('[adblock] erro:', err));
+  } else {
+    console.log('[adblock] desativado (use BRAUZE_ADBLOCK=1 pra ativar)');
+  }
 
   createWindow();
 

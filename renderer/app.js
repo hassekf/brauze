@@ -1357,13 +1357,15 @@ const PWD_PROMPT_SKIP  = document.getElementById('pwd-prompt-skip');
 const PWD_PROMPT_CLOSE = document.getElementById('pwd-prompt-close');
 let pwdPromptWcId = null;
 
-function showPwdPrompt({ wcId, origin, username }) {
+function showPwdPrompt({ wcId, origin, username, isUpdate }) {
   pwdPromptWcId = wcId;
   let host = '';
   try { host = new URL(origin).hostname; } catch { host = origin; }
+  const action = isUpdate ? 'Atualizar' : 'Salvar';
   PWD_PROMPT_TEXT.textContent = username
-    ? `Salvar senha de ${username} em ${host}?`
-    : `Salvar senha em ${host}?`;
+    ? `${action} senha de ${username} em ${host}?`
+    : `${action} senha em ${host}?`;
+  PWD_PROMPT_SAVE.textContent = action;
   PWD_PROMPT.classList.remove('hidden');
 }
 function hidePwdPrompt(dismiss = false) {

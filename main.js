@@ -476,15 +476,20 @@ app.whenReady().then(() => {
   }, 60_000);
 
   ipcMain.on('passwords:form-submit', (e, payload) => {
-    console.log('[passwords] form-submit received from wcId=', e.sender.id, 'origin=', payload && payload.origin, 'hasPwd=', !!(payload && payload.password));
     if (!payload || !payload.origin || !payload.password) return;
+    const check = passwords.existingMatch(payload);
+    if (check.exists && check.matches) {
+      // Mesma credencial já salva — só atualiza last_used silenciosamente
+      passwords.touchUsed(check.id);
+      return;
+    }
     pendingSaves.set(e.sender.id, { ...payload, ts: Date.now() });
     if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log('[passwords] sending save-prompt to renderer');
       mainWindow.webContents.send('passwords:save-prompt', {
         wcId: e.sender.id,
         origin: payload.origin,
         username: payload.username || '',
+        isUpdate: check.exists, // mesma user, senha diferente
       });
     }
   });

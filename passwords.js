@@ -91,6 +91,23 @@ function save({ origin, username, password, notes }) {
   return { id: r.lastInsertRowid, action: 'created' };
 }
 
+// Verifica se já existe credencial pra (origin, username) e se a senha bate.
+function existingMatch({ origin, username, password }) {
+  if (!db) return { exists: false, matches: false };
+  const o = normalizeOrigin(origin);
+  const row = db.prepare(`SELECT id, password_blob FROM passwords WHERE origin = ? AND username = ?`).get(o, username);
+  if (!row) return { exists: false, matches: false };
+  let stored = '';
+  try { stored = decrypt(row.password_blob); } catch {}
+  return { exists: true, matches: stored === password, id: row.id };
+}
+
+// Marca uso sem decryptar (pra evitar prompt biométrico em silent updates).
+function touchUsed(id) {
+  if (!db) return;
+  db.prepare(`UPDATE passwords SET last_used_at = ?, use_count = use_count + 1 WHERE id = ?`).run(Date.now(), id);
+}
+
 function listForOrigin(origin) {
   if (!db) return [];
   const o = normalizeOrigin(origin);
@@ -140,4 +157,4 @@ function update(id, { username, notes }) {
   return r.changes > 0;
 }
 
-module.exports = { init, isAvailable, save, listForOrigin, listAll, getDecrypted, remove, setTOTP, update, lock, isUnlocked };
+module.exports = { init, isAvailable, save, listForOrigin, listAll, getDecrypted, remove, setTOTP, update, lock, isUnlocked, existingMatch, touchUsed };

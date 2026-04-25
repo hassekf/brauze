@@ -67,6 +67,10 @@ function createTab(url = HOMEPAGE) {
       `</svg>` +
     `</span>` +
     `<span class="title">Nova aba</span>` +
+    `<span class="audio" title="Mutar/desmutar">` +
+      `<svg class="audio-on" viewBox="0 0 16 16" fill="currentColor"><path d="M3 6h2.5L9 3v10L5.5 10H3V6z"/><path d="M11 5.5c1 .8 1 4.2 0 5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>` +
+      `<svg class="audio-off" viewBox="0 0 16 16" fill="currentColor"><path d="M3 6h2.5L9 3v10L5.5 10H3V6z"/><path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>` +
+    `</span>` +
     `<span class="close" title="Fechar">×</span>`;
   tabsEl.insertBefore(tabEl, newtabBtn);
   // Tira a classe entering em dois rAFs pra browser computar layout colapsado primeiro,
@@ -155,13 +159,22 @@ function createTab(url = HOMEPAGE) {
       FIND_COUNTER.textContent = `${r.activeMatchOrdinal}/${r.matches}`;
     }
   });
+  view.addEventListener('media-started-playing', () => tabEl.classList.add('audible'));
+  view.addEventListener('media-paused',          () => tabEl.classList.remove('audible'));
 
   tabEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('close')) {
       closeTab(id);
-    } else {
-      activateTab(id);
+      return;
     }
+    if (e.target.closest('.audio')) {
+      e.stopPropagation();
+      const muted = !view.isAudioMuted();
+      view.setAudioMuted(muted);
+      tabEl.classList.toggle('muted', muted);
+      return;
+    }
+    activateTab(id);
   });
 
   tabs.set(id, { tabEl, view, splash });

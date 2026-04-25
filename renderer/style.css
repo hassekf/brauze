@@ -142,6 +142,26 @@ body.fullscreen #tabs {
   color: #d8d8d8;
   font-size: 12px;
 }
+.tab .audio {
+  width: 16px;
+  height: 16px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #8ab4ff;
+  border-radius: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.tab .audio:hover { background: #34343c; color: #fff; }
+.tab.audible .audio { display: flex; }
+.tab .audio svg { width: 12px; height: 12px; }
+.tab .audio .audio-on  { display: block; }
+.tab .audio .audio-off { display: none; }
+.tab.muted .audio .audio-on  { display: none; }
+.tab.muted .audio .audio-off { display: block; }
+.tab.muted .audio { color: #ff7373; }
+
 .tab .close {
   width: 16px;
   height: 16px;

@@ -195,9 +195,18 @@ function activateTab(id) {
   if (devtoolsOpen) closeDevTools();
 }
 
+const closedStack = [];
+const CLOSED_STACK_MAX = 30;
+
 function closeTab(id) {
   const entry = tabs.get(id);
   if (!entry) return;
+  // Guarda URL pra reabrir com Cmd+Shift+T (ignora newtab)
+  const closedUrl = safeGetUrl(entry.view);
+  if (closedUrl && !isNewtabUrl(closedUrl)) {
+    closedStack.push(closedUrl);
+    if (closedStack.length > CLOSED_STACK_MAX) closedStack.shift();
+  }
   entry.view.remove();
   if (entry.splash) entry.splash.remove();
   tabs.delete(id);
@@ -473,6 +482,12 @@ window.addEventListener('resize', () => { if (omniOpen) positionOmni(); });
 // Atalhos
 window.addEventListener('keydown', (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.shiftKey && e.key.toLowerCase() === 't') {
+    e.preventDefault();
+    const url = closedStack.pop();
+    if (url) createTab(url);
+    return;
+  }
   if (ctrl && e.key.toLowerCase() === 't') { e.preventDefault(); createTab(); }
   if (ctrl && e.key.toLowerCase() === 'w') { e.preventDefault(); if (activeId !== null) closeTab(activeId); }
   if (ctrl && e.key.toLowerCase() === 'l') { e.preventDefault(); addressEl.focus(); }

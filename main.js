@@ -14,6 +14,7 @@ const history     = require('./history');
 const omnibox     = require('./omnibox');
 const permissions = require('./permissions');
 const cookies     = require('./cookies');
+const privacy     = require('./privacy');
 
 // Mata o flash branco que o Chromium pinta antes do HTML carregar.
 app.commandLine.appendSwitch('default-background-color', '1b1b1f');
@@ -121,6 +122,7 @@ app.whenReady().then(() => {
     try { origin = new URL(details.requestingUrl || wc.getURL()).origin; } catch {}
     const allow = permissions.decide(origin, permission);
     if (!allow) console.log(`[permission] deny ${permission} for ${origin}`);
+    privacy.recordPermission(wc.id, permission, allow);
     callback(allow);
   });
   brauzeSession.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
@@ -157,7 +159,8 @@ app.whenReady().then(() => {
   // sem nodeIntegration. Renderer não pode escapar dessas opções.
   app.on('web-contents-created', (_e, contents) => {
     contents.on('will-attach-webview', (_event, webPreferences, params) => {
-      delete webPreferences.preload;
+      // Força preload nosso (privacy/fingerprint detector). Renderer não pode trocar.
+      webPreferences.preload = path.join(__dirname, 'renderer', 'webview-preload.js');
       delete webPreferences.preloadURL;
       webPreferences.nodeIntegration  = false;
       webPreferences.contextIsolation = true;
@@ -166,6 +169,12 @@ app.whenReady().then(() => {
       webPreferences.allowRunningInsecureContent = false;
       webPreferences.experimentalFeatures = false;
     });
+
+    // Reseta stats quando o frame principal navega pra nova URL
+    contents.on('did-start-navigation', (_ev, url, isInPlace, isMainFrame) => {
+      if (isMainFrame) privacy.reset(contents.id, url);
+    });
+    contents.on('destroyed', () => privacy.drop(contents.id));
 
     // Bloqueia navegação pra schemes perigosos (file://, chrome://, etc) iniciada por sites
     contents.on('will-navigate', (event, url) => {
@@ -427,6 +436,13 @@ app.whenReady().then(() => {
     preconnectCache.set(url, now);
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
+  });
+
+  // ---- Privacy dashboard ----
+  ipcMain.handle('privacy:get-stats', (_e, wcId) => privacy.snapshot(wcId));
+  ipcMain.on('privacy:fingerprint',   (e, payload) => {
+    privacy.setFingerprintCounters(e.sender.id, payload && payload.counters);
+    if (payload && payload.tool) privacy.recordSessionReplay(e.sender.id, payload.tool);
   });
 
   // ---- Cookies ----

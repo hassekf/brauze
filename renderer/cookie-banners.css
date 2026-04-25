@@ -1,0 +1,39 @@
+/* Esconde cookie banners e seus modais. Lista compacta dos selectors mais comuns
+   (OneTrust, Cookiebot, TrustArc, Quantcast, didomi, e variações genéricas). */
+
+#onetrust-banner-sdk, #onetrust-consent-sdk, .ot-sdk-container,
+.optanon-alert-box-wrapper, .optanon-alert-box-bg,
+#CybotCookiebotDialog, #CybotCookiebotDialogBodyUnderlay,
+#truste-consent-track, .truste_box_overlay, #consent_blackbar,
+#qcCmpUi, .qc-cmp-ui-container, .qc-cmp2-container,
+#didomi-host, #didomi-popup, .didomi-popup-container,
+#cookie-law-info-bar, #cookieChoiceInfo, #cookieconsent,
+.cc-window, .cc-banner, .cc-revoke,
+#cookies-policy, .cookies-policy, #cookies-bar, .cookies-bar,
+#cookieBanner, .cookieBanner, #cookie-banner, .cookie-banner,
+#cookieNotice, .cookieNotice, #cookie-notice, .cookie-notice,
+#cookieConsent, .cookieConsent, #cookie-consent, .cookie-consent,
+.gdpr-banner, .gdpr-modal, .gdpr-overlay,
+[class*="CookieBanner" i], [id*="CookieBanner" i],
+[class*="cookie-consent" i], [id*="cookie-consent" i],
+[class*="cookie-notice" i], [id*="cookie-notice" i],
+[class*="gdpr-consent" i], [id*="gdpr-consent" i],
+[aria-label*="cookie" i][role="dialog"],
+[aria-label*="consent" i][role="dialog"],
+[aria-modal="true"][class*="cookie" i],
+[aria-modal="true"][class*="consent" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Sites travam scroll/body quando banner ativa — destrava */
+html.optanon-alert-box-open, body.optanon-alert-box-open,
+html.cookies-not-accepted, body.cookies-not-accepted,
+html.gdpr-active, body.gdpr-active,
+html.modal-open, body.modal-open,
+html[style*="overflow: hidden"]:not([data-brauze-keep]) {
+  overflow: auto !important;
+  position: static !important;
+}

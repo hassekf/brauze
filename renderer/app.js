@@ -161,6 +161,10 @@ function createTab(url = HOMEPAGE) {
   });
   view.addEventListener('media-started-playing', () => tabEl.classList.add('audible'));
   view.addEventListener('media-paused',          () => tabEl.classList.remove('audible'));
+  view.addEventListener('dom-ready', () => {
+    try { view.executeJavaScript(FP_PATCHES_JS, false); } catch {}
+    try { view.insertCSS(COOKIE_BANNERS_CSS); } catch {}
+  });
 
   tabEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('close')) {
@@ -1752,6 +1756,160 @@ async function submitPrompt(question) {
   }
   asking = false;
 }
+
+// ---- Privacy: monkey-patches injetados em cada page ----
+const FP_PATCHES_JS = `(function(){
+  if (window.__brauzeFP) return; window.__brauzeFP = true;
+  function notify(type, tool){ try{ window.postMessage({__brauzeFP:true,type,tool},'*'); }catch(e){} }
+  try {
+    const orig = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function(){ notify('canvas'); return orig.apply(this, arguments); };
+  } catch(e){}
+  try {
+    [WebGLRenderingContext, window.WebGL2RenderingContext].filter(Boolean).forEach(function(Ctx){
+      const o = Ctx.prototype.getParameter;
+      Ctx.prototype.getParameter = function(p){
+        if (p === 37445 || p === 37446) notify('webgl');
+        return o.call(this, p);
+      };
+    });
+  } catch(e){}
+  try {
+    if (window.AudioContext) {
+      const o = AudioContext.prototype.createOscillator;
+      AudioContext.prototype.createOscillator = function(){ notify('audio'); return o.call(this); };
+    }
+  } catch(e){}
+  try {
+    const d = Object.getOwnPropertyDescriptor(Navigator.prototype,'plugins');
+    if (d && d.get) Object.defineProperty(Navigator.prototype,'plugins',{
+      get(){ notify('plugins'); return d.get.call(this); }, configurable:true
+    });
+  } catch(e){}
+  try {
+    if (document.fonts && document.fonts.check) {
+      const o = document.fonts.check.bind(document.fonts);
+      document.fonts.check = function(){ notify('fonts'); return o.apply(null, arguments); };
+    }
+  } catch(e){}
+})();`;
+
+const COOKIE_BANNERS_CSS = `
+#onetrust-banner-sdk,#onetrust-consent-sdk,.ot-sdk-container,
+.optanon-alert-box-wrapper,.optanon-alert-box-bg,
+#CybotCookiebotDialog,#CybotCookiebotDialogBodyUnderlay,
+#truste-consent-track,.truste_box_overlay,#consent_blackbar,
+#qcCmpUi,.qc-cmp-ui-container,.qc-cmp2-container,
+#didomi-host,#didomi-popup,.didomi-popup-container,
+#cookie-law-info-bar,#cookieChoiceInfo,#cookieconsent,
+.cc-window,.cc-banner,.cc-revoke,
+#cookieBanner,.cookieBanner,#cookie-banner,.cookie-banner,
+#cookieNotice,.cookieNotice,#cookie-notice,.cookie-notice,
+#cookieConsent,.cookieConsent,#cookie-consent,.cookie-consent,
+.gdpr-banner,.gdpr-modal,.gdpr-overlay,
+[class*="CookieBanner" i],[id*="CookieBanner" i],
+[class*="cookie-consent" i],[id*="cookie-consent" i],
+[class*="cookie-notice" i],[id*="cookie-notice" i],
+[class*="gdpr-consent" i],[id*="gdpr-consent" i],
+[aria-label*="cookie" i][role="dialog"],
+[aria-label*="consent" i][role="dialog"],
+[aria-modal="true"][class*="cookie" i],
+[aria-modal="true"][class*="consent" i] {
+  display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;
+}
+html.optanon-alert-box-open,body.optanon-alert-box-open,
+html.cookies-not-accepted,body.cookies-not-accepted,
+html.gdpr-active,body.gdpr-active,html.modal-open,body.modal-open {
+  overflow:auto!important;position:static!important;
+}`;
+
+// ---- Shield + Privacy popover ----
+const SHIELD = document.getElementById('shield');
+const PP_POPOVER = document.getElementById('privacy-popover');
+const PP_BODY    = document.getElementById('pp-body');
+const PP_CLOSE   = PP_POPOVER.querySelector('.pp-close');
+let ppTimer = null;
+
+function ppValueClass(n) { return n === 0 ? 'zero' : 'good'; }
+
+function renderPrivacy(s) {
+  let html = '';
+  html += `<div class="pp-row"><span class="pp-icon">🛡️</span><span class="pp-label">Trackers bloqueados</span><span class="pp-value ${ppValueClass(s.trackersBlocked)}">${s.trackersBlocked}</span></div>`;
+  html += `<div class="pp-row"><span class="pp-icon">🍪</span><span class="pp-label">3P cookies bloqueados</span><span class="pp-value ${ppValueClass(s.thirdPartyCookiesBlocked)}">${s.thirdPartyCookiesBlocked}</span></div>`;
+  html += `<div class="pp-row"><span class="pp-icon">🌐</span><span class="pp-label">Domínios 3P</span><span class="pp-value">${s.thirdPartyHosts.length}</span></div>`;
+
+  const fpTotal = Object.values(s.fingerprintAttempts).reduce((a, b) => a + b, 0);
+  html += `<div class="pp-row"><span class="pp-icon">🎯</span><span class="pp-label">Fingerprint attempts</span><span class="pp-value ${fpTotal ? 'bad' : 'zero'}">${fpTotal}</span></div>`;
+
+  const permEntries = Object.entries(s.permissionsRequested);
+  if (permEntries.length) {
+    html += `<div class="pp-section-title">Permissions pedidas</div><div class="pp-list">`;
+    for (const [p, v] of permEntries) {
+      html += `<div class="pp-item">${escapeHtml(p)}: <span style="color:${v === 'granted' ? '#4ade80' : '#ff7373'}">${v}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (s.sessionReplayTools.length) {
+    html += `<div class="pp-section-title">Session replay / Analytics</div><div class="pp-list">`;
+    for (const t of s.sessionReplayTools) html += `<div class="pp-item">📹 ${escapeHtml(t)}</div>`;
+    html += `</div>`;
+  }
+
+  if (s.thirdPartyHosts.length) {
+    html += `<div class="pp-section-title">Domínios 3P contactados</div><div class="pp-list">`;
+    for (const h of s.thirdPartyHosts.slice(0, 30)) html += `<div class="pp-item">${escapeHtml(h)}</div>`;
+    if (s.thirdPartyHosts.length > 30) html += `<div class="pp-item">...e mais ${s.thirdPartyHosts.length - 30}</div>`;
+    html += `</div>`;
+  }
+
+  let origin = '';
+  try { origin = new URL(s.url).hostname; } catch {}
+  html += `<div class="pp-actions">`;
+  if (origin) html += `<button data-act="clear-cookies">Limpar cookies de ${escapeHtml(origin)}</button>`;
+  html += `</div>`;
+
+  PP_BODY.innerHTML = html;
+
+  PP_BODY.querySelectorAll('[data-act="clear-cookies"]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!origin) return;
+      const url = 'https://' + origin;
+      const n = await window.brauze.cookies.clearOrigin(url);
+      b.textContent = `✓ ${n} cookies removidos`;
+    });
+  });
+}
+
+async function refreshPrivacy() {
+  if (PP_POPOVER.classList.contains('hidden')) return;
+  const view = getActiveWebview();
+  if (!view) return;
+  let wcId; try { wcId = view.getWebContentsId(); } catch { return; }
+  const stats = await window.brauze.privacy.getStats(wcId);
+  if (stats) renderPrivacy(stats);
+}
+
+function positionPrivacyPopover() {
+  const r = SHIELD.getBoundingClientRect();
+  PP_POPOVER.style.left = Math.min(r.left, window.innerWidth - 380) + 'px';
+}
+
+function togglePrivacy() {
+  if (PP_POPOVER.classList.contains('hidden')) {
+    positionPrivacyPopover();
+    PP_POPOVER.classList.remove('hidden');
+    refreshPrivacy();
+    ppTimer = setInterval(refreshPrivacy, 1500);
+  } else {
+    PP_POPOVER.classList.add('hidden');
+    if (ppTimer) { clearInterval(ppTimer); ppTimer = null; }
+  }
+}
+
+SHIELD.addEventListener('click', togglePrivacy);
+PP_CLOSE.addEventListener('click', togglePrivacy);
+window.addEventListener('resize', () => { if (!PP_POPOVER.classList.contains('hidden')) positionPrivacyPopover(); });
 
 // Boot
 createTab();

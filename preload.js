@@ -85,6 +85,9 @@ contextBridge.exposeInMainWorld('brauze', {
     preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
     recentHistory:    (limit)   => ipcRenderer.invoke('history:recent', limit),
   },
+  privacy: {
+    getStats: (wcId) => ipcRenderer.invoke('privacy:get-stats', wcId),
+  },
   cookies: {
     listAllowed3P: ()       => ipcRenderer.invoke('cookies:list-allowed-3p'),
     allow3P:       (host)   => ipcRenderer.invoke('cookies:allow-3p', host),

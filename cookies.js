@@ -4,6 +4,7 @@
 const { getDomain } = require('tldts-experimental');
 const fs   = require('node:fs');
 const path = require('node:path');
+const privacy = require('./privacy');
 
 const allowed3PCookies = new Set();
 let storePath = '';
@@ -45,9 +46,11 @@ function attachToSession(session) {
   session.webRequest.onBeforeSendHeaders((details, cb) => {
     if (!isThirdParty(details)) return cb({ requestHeaders: details.requestHeaders });
     const headers = { ...details.requestHeaders };
+    let stripped = false;
     for (const k of Object.keys(headers)) {
-      if (k.toLowerCase() === 'cookie') delete headers[k];
+      if (k.toLowerCase() === 'cookie') { delete headers[k]; stripped = true; }
     }
+    if (stripped) privacy.recordCookieBlocked(details.webContentsId);
     cb({ requestHeaders: headers });
   });
 
@@ -55,9 +58,11 @@ function attachToSession(session) {
   session.webRequest.onHeadersReceived((details, cb) => {
     if (!isThirdParty(details)) return cb({ responseHeaders: details.responseHeaders });
     const headers = { ...(details.responseHeaders || {}) };
+    let stripped = false;
     for (const k of Object.keys(headers)) {
-      if (k.toLowerCase() === 'set-cookie') delete headers[k];
+      if (k.toLowerCase() === 'set-cookie') { delete headers[k]; stripped = true; }
     }
+    if (stripped) privacy.recordCookieBlocked(details.webContentsId);
     cb({ responseHeaders: headers });
   });
 }

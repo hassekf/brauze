@@ -17,6 +17,7 @@
       <button id="back"    class="navbtn" title="Voltar">‹</button>
       <button id="forward" class="navbtn" title="Avançar">›</button>
       <button id="reload"  class="navbtn" title="Recarregar">↻</button>
+      <button id="shield"  class="navbtn shield-btn" title="Privacidade">🛡</button>
       <div id="address-wrap">
         <button id="mode-toggle" class="mode-toggle" title="Alternar modo (Ctrl+/)">🌐</button>
         <input id="address" type="text" spellcheck="false"
@@ -38,6 +39,14 @@
   </div>
 
   <div id="omnibox-popover" class="hidden"></div>
+
+  <div id="privacy-popover" class="hidden">
+    <div class="pp-header">
+      <span class="pp-title">Privacidade desta página</span>
+      <button class="pp-close" title="Fechar">×</button>
+    </div>
+    <div id="pp-body"></div>
+  </div>
 
   <div id="quick-switcher" class="hidden">
     <div id="qs-backdrop"></div>

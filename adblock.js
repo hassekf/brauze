@@ -7,9 +7,11 @@
 // Implementamos só o network blocking aqui, com bypass por hostname.
 
 const { ElectronBlocker, fromElectronDetails } = require('@ghostery/adblocker-electron');
+const { getDomain } = require('tldts-experimental');
 const fs   = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
+const privacy = require('./privacy');
 
 let blocker = null;
 const whitelist = new Set();
@@ -62,15 +64,25 @@ async function init({ userDataPath, session }) {
 
   session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
     try {
-      // Bypass se URL ou referrer está na whitelist
-      let host = '', refHost = '';
-      try { host    = new URL(details.url).hostname; } catch {}
+      const wcId = details.webContentsId;
+      let host = '', refHost = '', topDomain = '';
+      try { host = new URL(details.url).hostname; } catch {}
       try { refHost = new URL(details.referrer || '').hostname; } catch {}
+      try { topDomain = getDomain(details.frame?.top?.url || details.referrer || details.url); } catch {}
+      const reqDomain = getDomain(details.url);
+      const isThirdParty = !!(reqDomain && topDomain && reqDomain !== topDomain);
+
+      privacy.recordRequest(wcId, { host, type: details.resourceType, isThirdParty });
+
+      // Bypass adblock se URL ou referrer está na whitelist
       if (isWhitelisted(host) || isWhitelisted(refHost)) {
         return callback({});
       }
       const request = fromElectronDetails(details);
       const result = blocker.match(request);
+      if (result.match || result.redirect) {
+        privacy.recordTrackerBlocked(wcId, host);
+      }
       if (result.redirect) return callback({ redirectURL: result.redirect.dataUrl });
       if (result.match)    return callback({ cancel: true });
       callback({});

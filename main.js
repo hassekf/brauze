@@ -108,16 +108,13 @@ app.whenReady().then(() => {
   watchedFolders.init({ userDataPath: app.getPath('userData') });
   history.init({ userDataPath: app.getPath('userData') });
 
-  // Adblock na sessão compartilhada das webviews (`persist:brauze`).
-  // Default OFF até termos bypass per-domain (quebra YouTube etc).
-  // Reativa com BRAUZE_ADBLOCK=1 npm start
-  if (process.env.BRAUZE_ADBLOCK) {
+  // Adblock na sessão compartilhada das webviews (`persist:brauze`)
+  // — apenas network blocking, com whitelist por domínio.
+  if (!process.env.BRAUZE_NO_ADBLOCK) {
     adblock.init({
       userDataPath: app.getPath('userData'),
       session: session.fromPartition('persist:brauze'),
     }).catch((err) => console.error('[adblock] erro:', err));
-  } else {
-    console.log('[adblock] desativado (use BRAUZE_ADBLOCK=1 pra ativar)');
   }
 
   createWindow();
@@ -384,6 +381,11 @@ app.whenReady().then(() => {
     try { brauzeSession.preconnect({ url, numSockets: 1 }); }
     catch (err) { console.warn('[preconnect]', err.message); }
   });
+
+  // ---- Adblock whitelist ----
+  ipcMain.handle('adblock:whitelist',        ()       => adblock.getWhitelist());
+  ipcMain.handle('adblock:whitelist-add',    (_e, h)  => adblock.addToWhitelist(h, app.getPath('userData')));
+  ipcMain.handle('adblock:whitelist-remove', (_e, h)  => adblock.removeFromWhitelist(h, app.getPath('userData')));
 
   // ---- Herd (.test → pasta do projeto) ----
   ipcMain.handle('herd:resolve', (_e, host) => herd.resolve(host));

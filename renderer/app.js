@@ -1970,7 +1970,7 @@ const AUTOFILL_FN_STR = `function(accounts){
   }
 
   document.addEventListener('focusin', function(e){
-    if (state.accounts.length < 2) return;
+    if (state.accounts.length === 0) return;
     if (isUsernameLike(e.target)) showPopover(e.target);
   });
   document.addEventListener('focusout', function(){ setTimeout(hidePopover, 200); });

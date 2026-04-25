@@ -1,9 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Adblock cosmetic filters: registra os handlers IPC que o lib espera no renderer.
-try { require('@ghostery/adblocker-electron-preload'); } catch (err) {
-  console.warn('[adblock] preload bridge falhou:', err.message);
-}
+// Adblock cosmetic filters foram desativados — quebravam sites com Trusted Types
+// CSP (YouTube, Twitter, etc). Network-level blocking continua via main process.
 
 contextBridge.exposeInMainWorld('brauze', {
   radar: {

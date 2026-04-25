@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data:; connect-src *;">
+  <title>Brauze</title>
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="chrome">
+    <div id="tabs"></div>
+    <div id="toolbar">
+      <button id="back"    class="navbtn" title="Voltar">‹</button>
+      <button id="forward" class="navbtn" title="Avançar">›</button>
+      <button id="reload"  class="navbtn" title="Recarregar">↻</button>
+      <div id="address-wrap">
+        <button id="mode-toggle" class="mode-toggle" title="Alternar modo (Ctrl+/)">🌐</button>
+        <input id="address" type="text" spellcheck="false"
+               placeholder="Pesquise ou digite uma URL">
+      </div>
+      <button id="newtab"  class="navbtn" title="Nova aba">+</button>
+    </div>
+  </div>
+  <div id="views"></div>
+
+  <div id="terminal-panel" class="hidden">
+    <div id="terminal-resize-handle" title="Arraste para redimensionar"></div>
+    <div id="terminal-header">
+      <div id="term-tabs"></div>
+      <button id="term-new-tab" class="term-icon-btn" title="Nova aba (Ctrl+Shift+T)">+</button>
+      <div id="term-cli-chips"></div>
+      <button id="term-close" class="term-icon-btn" title="Fechar (Ctrl+`)">×</button>
+    </div>
+    <div id="terminal-bodies"></div>
+  </div>
+
+  <div id="dragging-overlay" class="hidden"></div>
+
+  <div id="prompt-drawer" class="hidden">
+    <div id="prompt-drawer-header">
+      <span id="prompt-drawer-title">Pergunta</span>
+      <button id="prompt-drawer-close" title="Fechar">×</button>
+    </div>
+    <div id="prompt-drawer-question"></div>
+    <div id="prompt-drawer-body"></div>
+    <div id="prompt-drawer-footer">
+      <span id="prompt-drawer-status"></span>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <div id="statusbar-left">
+      <div class="status-item" id="radar-item" title="Project Radar — serviços locais detectados">
+        <span class="status-dot" id="radar-dot">·</span>
+        <span class="status-label" id="radar-label">scanning…</span>
+      </div>
+    </div>
+    <div id="statusbar-right">
+      <div class="status-item" id="term-toggle" title="Terminal (Ctrl+`)">
+        <span>⌨</span>
+        <span class="status-label">Terminal</span>
+      </div>
+      <div class="status-item static">v0.1.0</div>
+    </div>
+  </div>
+
+  <div id="cli-variant-popover" class="popover hidden"></div>
+
+  <div id="popover-backdrop" class="hidden"></div>
+
+  <div id="radar-popover" class="popover hidden">
+    <div class="popover-header">
+      <span id="radar-title">Serviços locais</span>
+      <div class="popover-header-btns">
+        <button id="radar-settings-btn" title="Pastas observadas">⚙</button>
+        <button id="radar-refresh"      title="Re-escanear agora">↻</button>
+      </div>
+    </div>
+    <div id="radar-list" class="popover-body">
+      <div class="empty">Nenhum serviço detectado.</div>
+    </div>
+    <div id="radar-settings-view" class="popover-body hidden"></div>
+    <div class="popover-footer" id="radar-footer">
+      Scan a cada 5s · portas comuns de dev
+    </div>
+  </div>
+
+  <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="../node_modules/marked/marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

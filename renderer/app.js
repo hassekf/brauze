@@ -148,6 +148,7 @@ function createTab(url = HOMEPAGE) {
       else addressEl.value = isNewtabUrl(e.url) ? '' : e.url;
       updateHerdChip();
     }
+    triggerAutofill(view).catch(() => {});
     updateNav();
   });
   view.addEventListener('did-start-loading', () => { tabEl.classList.add('loading'); updateNav(); });
@@ -1853,20 +1854,34 @@ async function triggerAutofill(view) {
   try { origin = new URL(url).origin; host = new URL(url).hostname; } catch { return; }
   const saved = await window.brauze.passwords.listOrigin(origin);
   if (!saved.length) {
-    // Sem creds salvos — mas pode estar visitando typosquat de site que tem.
     const ph = await detectPhishing(origin);
     if (ph && ph.suspicious) showPhishingWarning(host, ph.similarTo);
     return;
   }
-  const top = saved[0];
-  // Autofill silencioso — não exige Touch ID (UX fluida estilo Chrome)
-  const cred = await window.brauze.passwords.get(top.id, { requireAuth: false });
-  if (!cred || !cred.password) return;
-  const args = JSON.stringify(cred.username) + ',' + JSON.stringify(cred.password) + ',' + JSON.stringify(cred.totpCode || '');
+  // Decrypta todas as contas salvas pra esta origem (silencioso, sem Touch ID)
+  const accounts = [];
+  for (const s of saved) {
+    const cred = await window.brauze.passwords.get(s.id, { requireAuth: false });
+    if (cred && cred.password) {
+      accounts.push({
+        id: s.id,
+        username: cred.username || '',
+        password: cred.password,
+        totp: cred.totpCode || '',
+      });
+    }
+  }
+  if (!accounts.length) return;
+  const args = JSON.stringify(accounts);
   try { view.executeJavaScript(`(${AUTOFILL_FN_STR})(${args})`, false); } catch {}
 }
 
-const AUTOFILL_FN_STR = `function(u, p, totp){
+const AUTOFILL_FN_STR = `function(accounts){
+  if (window.__brauzeAF) { window.__brauzeAF.update(accounts); return; }
+  const state = { accounts: accounts || [], filledKey: null, popover: null };
+  window.__brauzeAF = state;
+  state.update = function(newAccounts){ state.accounts = newAccounts || []; };
+
   function setVal(el, v){
     try {
       const proto = Object.getPrototypeOf(el);
@@ -1876,22 +1891,14 @@ const AUTOFILL_FN_STR = `function(u, p, totp){
       el.dispatchEvent(new Event('change', { bubbles: true }));
     } catch(e) {}
   }
-  function fillPw(){
-    const pw = document.querySelector('input[type="password"]:not([disabled]):not([readonly])');
-    if (!pw) return false;
-    if (pw.__brauzeFilled) return true;
-    const form = pw.form || pw.closest('form') || document;
-    let user = form.querySelector('input[autocomplete="username"]')
-            || form.querySelector('input[type="email"]:not([disabled]):not([readonly])')
-            || form.querySelector('input[type="tel"]:not([disabled]):not([readonly])')
-            || form.querySelector('input[type="text"]:not([disabled]):not([readonly])');
-    if (user && u) setVal(user, u);
-    if (p) setVal(pw, p);
-    pw.__brauzeFilled = true;
-    return true;
+  function pwField(){ return document.querySelector('input[type="password"]:not([disabled]):not([readonly])'); }
+  function userField(form){
+    return form.querySelector('input[autocomplete="username"]')
+        || form.querySelector('input[type="email"]:not([disabled]):not([readonly])')
+        || form.querySelector('input[type="tel"]:not([disabled]):not([readonly])')
+        || form.querySelector('input[type="text"]:not([disabled]):not([readonly])');
   }
-  function fillTotp(){
-    if (!totp) return false;
+  function totpField(){
     const sels = [
       'input[autocomplete="one-time-code"]:not([disabled]):not([readonly])',
       'input[name*="otp" i]:not([disabled]):not([readonly])',
@@ -1901,16 +1908,83 @@ const AUTOFILL_FN_STR = `function(u, p, totp){
       'input[name*="code" i][type="text"]:not([disabled]):not([readonly])',
       'input[type="text"][maxlength="6"]:not([disabled]):not([readonly])',
     ];
-    for (const s of sels) {
-      const el = document.querySelector(s);
-      if (el && !el.__brauzeFilled) { setVal(el, totp); el.__brauzeFilled = true; return true; }
-    }
-    return false;
+    for (const s of sels) { const el = document.querySelector(s); if (el) return el; }
+    return null;
   }
-  fillPw(); fillTotp();
-  const obs = new MutationObserver(function(){ fillPw(); fillTotp(); });
+
+  function fillWith(account){
+    const pw = pwField();
+    if (pw) {
+      const form = pw.form || pw.closest('form') || document;
+      const user = userField(form);
+      if (user && account.username) setVal(user, account.username);
+      if (account.password) setVal(pw, account.password);
+    }
+    const tot = totpField();
+    if (tot && account.totp) setVal(tot, account.totp);
+    state.filledKey = account.id;
+    hidePopover();
+  }
+
+  function autoFillIfSingle(){
+    if (state.accounts.length !== 1) return false;
+    const pw = pwField();
+    if (!pw || pw.__brauzeFilled) return true;
+    fillWith(state.accounts[0]);
+    pw.__brauzeFilled = true;
+    return true;
+  }
+
+  function hidePopover(){ if (state.popover) { state.popover.remove(); state.popover = null; } }
+
+  function showPopover(input){
+    hidePopover();
+    if (state.accounts.length === 0) return;
+    const pop = document.createElement('div');
+    pop.style.cssText = 'position:fixed;background:#25252b;color:#e6e6e6;border:1px solid #34343c;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.5);z-index:2147483647;min-width:240px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;padding:4px 0;';
+    const r = input.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - 260) + 'px';
+    pop.style.top  = (r.bottom + 4) + 'px';
+    state.accounts.forEach(function(acc){
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;';
+      row.innerHTML = '<span style="width:16px;height:16px;border-radius:50%;background:#5a8dff;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:600">'+(acc.username[0]||'?').toUpperCase()+'</span><span>'+(acc.username||'(sem usuário)')+'</span>';
+      row.addEventListener('mouseenter', function(){ row.style.background = '#34343c'; });
+      row.addEventListener('mouseleave', function(){ row.style.background = ''; });
+      row.addEventListener('mousedown', function(e){ e.preventDefault(); fillWith(acc); });
+      pop.appendChild(row);
+    });
+    document.body.appendChild(pop);
+    state.popover = pop;
+  }
+
+  function isUsernameLike(el){
+    if (!el || el.tagName !== 'INPUT' || el.disabled || el.readOnly) return false;
+    const t = (el.type || 'text').toLowerCase();
+    if (t === 'email' || t === 'tel') return true;
+    if (t !== 'text') return false;
+    const ac = (el.autocomplete || '').toLowerCase();
+    if (ac === 'username' || ac.includes('email')) return true;
+    const meta = ((el.name||'') + ' ' + (el.id||'') + ' ' + (el.placeholder||'')).toLowerCase();
+    return /(email|user|login|usuario|usuário|conta)/.test(meta);
+  }
+
+  document.addEventListener('focusin', function(e){
+    if (state.accounts.length < 2) return;
+    if (isUsernameLike(e.target)) showPopover(e.target);
+  });
+  document.addEventListener('focusout', function(){ setTimeout(hidePopover, 200); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hidePopover(); });
+  window.addEventListener('scroll', hidePopover, true);
+  window.addEventListener('resize', hidePopover);
+
+  // Auto-fill quando há só 1 conta + observer pra SPA navigations
+  autoFillIfSingle();
+  const obs = new MutationObserver(function(){
+    const pw = pwField();
+    if (pw && !pw.__brauzeFilled) autoFillIfSingle();
+  });
   try { obs.observe(document.body || document.documentElement, { childList:true, subtree:true }); } catch(e) {}
-  setTimeout(function(){ try { obs.disconnect(); } catch(e) {} }, 12000);
 }`;
 
 // ---- Privacy: monkey-patches injetados em cada page ----

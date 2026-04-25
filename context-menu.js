@@ -4,7 +4,7 @@ const { Menu, MenuItem, clipboard, shell } = require('electron');
 
 function buildWebviewMenu(contents, params, opts) {
   const menu = new Menu();
-  const { onOpenInNewTab } = opts;
+  const { onOpenInNewTab, onInspect } = opts;
 
   // -- Link --
   if (params.linkURL) {
@@ -89,7 +89,7 @@ function buildWebviewMenu(contents, params, opts) {
   }));
   menu.append(new MenuItem({
     label: 'Inspecionar elemento',
-    click: () => contents.inspectElement(params.x, params.y),
+    click: () => onInspect(contents.id, params.x, params.y),
   }));
 
   return menu;
@@ -119,12 +119,12 @@ function buildChromeMenu(_contents, params) {
   return menu;
 }
 
-function attach({ onOpenInNewTab }) {
+function attach({ onOpenInNewTab, onInspect }) {
   return (contents) => {
     contents.on('context-menu', (_event, params) => {
       const isWebview = contents.getType() === 'webview';
       const menu = isWebview
-        ? buildWebviewMenu(contents, params, { onOpenInNewTab })
+        ? buildWebviewMenu(contents, params, { onOpenInNewTab, onInspect })
         : buildChromeMenu(contents, params);
       if (menu.items.length > 0) menu.popup();
     });

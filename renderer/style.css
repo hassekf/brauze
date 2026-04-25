@@ -1,5 +1,5 @@
 * { box-sizing: border-box; }
-:root { --term-h: 0px; }
+:root { --term-h: 0px; --devtools-w: 0px; }
 
 html, body {
   margin: 0;
@@ -16,6 +16,10 @@ html, body {
 #chrome {
   background: #1b1b1f;
   border-bottom: 1px solid #2a2a30;
+  -webkit-app-region: drag;
+}
+body.fullscreen #chrome {
+  /* fullscreen no macOS esconde os semáforos — recupera o espaço à esquerda */
 }
 
 /* ----- Abas ----- */
@@ -23,11 +27,38 @@ html, body {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  padding: 6px 8px 0 8px;
+  padding: 6px 8px 0 78px; /* 78px deixa o semáforo do macOS visível */
   min-height: 36px;
   overflow-x: auto;
   scrollbar-width: none;
 }
+body.fullscreen #tabs {
+  padding-left: 8px; /* sem semáforos em fullscreen */
+}
+
+/* Tudo interativo dentro do chrome precisa ser no-drag pra continuar clicável */
+.tab, .tab .close, .tab .title,
+#newtab, #toolbar, #toolbar * {
+  -webkit-app-region: no-drag;
+}
+
+.tab-newtab {
+  width: 28px;
+  height: 30px;
+  margin-left: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #b0b0b0;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tab-newtab:hover { background: #2d2d34; color: #fff; }
 #tabs::-webkit-scrollbar { display: none; }
 
 .tab {
@@ -42,13 +73,67 @@ html, body {
   cursor: pointer;
   border: 1px solid transparent;
   border-bottom: none;
-  transition: background 0.12s ease;
+  overflow: hidden;
+  transition:
+    background 0.12s ease,
+    min-width 180ms ease,
+    max-width 180ms ease,
+    padding 180ms ease,
+    opacity 180ms ease,
+    margin 180ms ease;
 }
+.tab.entering, .tab.exiting {
+  min-width: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
+  opacity: 0;
+}
+.tab.exiting { pointer-events: none; }
 .tab:hover { background: #2d2d34; }
 .tab.active {
   background: #34343c;
   border-color: #3c3c45;
 }
+.tab .favicon {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tab .spinner {
+  display: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #3c3c45;
+  border-top-color: #5a8dff;
+  border-radius: 50%;
+  animation: tab-spin 720ms linear infinite;
+}
+.tab .favicon-img {
+  display: none;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+.tab .favicon-default {
+  display: none;
+  width: 13px;
+  height: 13px;
+  color: #7a7a82;
+}
+.tab.loading .spinner { display: block; }
+.tab.has-favicon:not(.loading) .favicon-img { display: block; }
+.tab:not(.loading):not(.has-favicon) .favicon-default { display: block; }
+
+@keyframes tab-spin {
+  to { transform: rotate(360deg); }
+}
+
 .tab .title {
   flex: 1;
   white-space: nowrap;
@@ -154,7 +239,7 @@ html, body {
 /* ----- Webviews ----- */
 #views {
   position: relative;
-  width: 100%;
+  width: calc(100% - var(--devtools-w));
   height: calc(100vh - 78px - 24px - var(--term-h));
   background: #1b1b1f;
 }
@@ -165,9 +250,22 @@ webview {
   width: 100%;
   height: 100%;
   display: none;
-  background: #fff;
+  background: #1b1b1f;
 }
 webview.active { display: flex; }
+
+.view-splash {
+  position: absolute;
+  inset: 0;
+  background: #1b1b1f;
+  display: none;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+.view-splash.active { display: block; }
+.view-splash.fading { opacity: 0; }
 
 /* ----- Status bar ----- */
 #statusbar {
@@ -344,6 +442,12 @@ webview.active { display: flex; }
   transition: background 0.1s ease;
 }
 .service-btn:hover { background: #34343c; color: #fff; }
+.service-btn:disabled { opacity: 0.55; cursor: default; }
+.service-btn.danger {
+  border-color: #5a2a2a;
+  color: #ff7373;
+}
+.service-btn.danger:hover { background: #4a1d1d; border-color: #7a3a3a; color: #fff; }
 
 /* Match via watched folder */
 .service-matches {
@@ -480,7 +584,7 @@ webview.active { display: flex; }
   position: fixed;
   bottom: 24px;
   left: 0;
-  right: 0;
+  right: var(--devtools-w);
   height: var(--term-h);
   background: #0d0d11;
   border-top: 1px solid #2a2a30;
@@ -623,6 +727,137 @@ webview.active { display: flex; }
 }
 .cli-chip-arrow:hover { background: #34343c; color: #fff; }
 
+/* ----- Omnibox dropdown ----- */
+#omnibox-popover {
+  position: fixed;
+  background: #25252b;
+  border: 1px solid #34343c;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 4px 0;
+}
+#omnibox-popover.hidden { display: none; }
+
+.omni-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #d8d8d8;
+}
+.omni-item.selected, .omni-item:hover { background: #34343c; }
+.omni-item .omni-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #888;
+  flex-shrink: 0;
+}
+.omni-item .omni-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.omni-item .omni-secondary {
+  color: #888;
+  font-size: 11px;
+  margin-left: 4px;
+}
+.omni-item .omni-pill {
+  background: #2d3a52;
+  color: #8ab4ff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+
+/* ----- DevTools panel ----- */
+#devtools-panel {
+  position: fixed;
+  top: 78px;
+  bottom: 24px;
+  right: 0;
+  width: var(--devtools-w);
+  background: #1b1b1f;
+  box-shadow: -1px 0 0 #2a2a30;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+#devtools-panel.hidden { display: none; box-shadow: none; }
+
+#devtools-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 6;
+}
+#devtools-panel.dragging #devtools-resize-handle {
+  background: #5a8dff;
+}
+
+#devtools-header {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  background: #15151a;
+  border-bottom: 1px solid #2a2a30;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  flex-shrink: 0;
+}
+.devtools-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+#devtools-host {
+  flex: 1;
+  position: relative;
+  background: #fff;
+  overflow: hidden;
+}
+#devtools-host webview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cli-chip.herd-chip .cli-chip-icon { color: #c084fc; }
+.herd-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #3a2a4a;
+  color: #c084fc;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
 .term-icon-btn {
   width: 24px;
   height: 24px;
@@ -681,6 +916,7 @@ webview.active { display: flex; }
 #prompt-drawer.hidden {
   transform: translateX(100%);
   pointer-events: none;
+  box-shadow: none;
 }
 
 #prompt-drawer-header {

@@ -6,7 +6,8 @@ const forwardBtn = document.getElementById('forward');
 const reloadBtn  = document.getElementById('reload');
 const newtabBtn  = document.getElementById('newtab');
 
-const HOMEPAGE = 'https://www.google.com';
+const HOMEPAGE = 'brauze://newtab';
+const isNewtabUrl = (u) => !u || u === HOMEPAGE || u.startsWith('brauze://newtab');
 
 const tabs = new Map();
 let activeId = null;
@@ -25,12 +26,23 @@ function createTab(url = HOMEPAGE) {
   const id = nextId++;
 
   const tabEl = document.createElement('div');
-  tabEl.className = 'tab';
+  tabEl.className = 'tab entering';
   tabEl.dataset.id = id;
   tabEl.innerHTML =
+    `<span class="favicon">` +
+      `<span class="spinner"></span>` +
+      `<img class="favicon-img" alt="">` +
+      `<svg class="favicon-default" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">` +
+        `<circle cx="8" cy="8" r="6.2"/>` +
+        `<path d="M1.8 8h12.4M8 1.8c2 2.2 2 10.2 0 12.4M8 1.8c-2 2.2-2 10.2 0 12.4"/>` +
+      `</svg>` +
+    `</span>` +
     `<span class="title">Nova aba</span>` +
     `<span class="close" title="Fechar">×</span>`;
-  tabsEl.appendChild(tabEl);
+  tabsEl.insertBefore(tabEl, newtabBtn);
+  // Tira a classe entering em dois rAFs pra browser computar layout colapsado primeiro,
+  // aí transitar suavemente até o tamanho final.
+  requestAnimationFrame(() => requestAnimationFrame(() => tabEl.classList.remove('entering')));
 
   const view = document.createElement('webview');
   view.dataset.id = id;
@@ -39,25 +51,74 @@ function createTab(url = HOMEPAGE) {
   view.setAttribute('partition', 'persist:brauze'); // session compartilhada (cookies + adblock)
   viewsEl.appendChild(view);
 
+  // Splash dark sobre o webview até o primeiro paint, mata o flash branco do Chromium.
+  const splash = document.createElement('div');
+  splash.className = 'view-splash';
+  splash.dataset.id = id;
+  viewsEl.appendChild(splash);
+  let splashRemoved = false;
+  const removeSplash = () => {
+    if (splashRemoved) return;
+    splashRemoved = true;
+    splash.classList.add('fading');
+    setTimeout(() => {
+      splash.remove();
+      const entry = tabs.get(id);
+      if (entry) entry.splash = null;
+    }, 200);
+  };
+  view.addEventListener('did-stop-loading', removeSplash, { once: true });
+  view.addEventListener('did-fail-load',   removeSplash, { once: true });
+  setTimeout(removeSplash, 4000); // safety net
+
   view.addEventListener('page-title-updated', (e) => {
     tabEl.querySelector('.title').textContent = e.title || 'Sem título';
+    // Atualiza title no history pra última URL conhecida
+    const url = safeGetUrl(view);
+    if (url && !isNewtabUrl(url)) {
+      window.brauze.omnibox.recordVisit({ url, title: e.title || '' });
+    }
+  });
+  view.addEventListener('page-favicon-updated', (e) => {
+    const url = (e.favicons && e.favicons[0]) || '';
+    const img = tabEl.querySelector('.favicon-img');
+    if (!url) return;
+    img.onload  = () => tabEl.classList.add('has-favicon');
+    img.onerror = () => {
+      img.removeAttribute('src');
+      tabEl.classList.remove('has-favicon');
+    };
+    img.src = url;
+  });
+  view.addEventListener('did-start-navigation', (e) => {
+    // Reset favicon ao navegar pra outro host (evita ícone errado durante load)
+    if (e.isMainFrame) {
+      tabEl.classList.remove('has-favicon');
+      tabEl.querySelector('.favicon-img').removeAttribute('src');
+    }
   });
   view.addEventListener('did-navigate', (e) => {
     if (id === activeId) {
       if (mode === 'prompt') setMode('web'); // navegação real → sai do modo IA
-      else addressEl.value = e.url;
+      else addressEl.value = isNewtabUrl(e.url) ? '' : e.url;
+      updateHerdChip();
+    }
+    if (!isNewtabUrl(e.url)) {
+      const t = tabEl.querySelector('.title')?.textContent || '';
+      window.brauze.omnibox.recordVisit({ url: e.url, title: t });
     }
     updateNav();
   });
   view.addEventListener('did-navigate-in-page', (e) => {
     if (id === activeId) {
       if (mode === 'prompt') setMode('web');
-      else addressEl.value = e.url;
+      else addressEl.value = isNewtabUrl(e.url) ? '' : e.url;
+      updateHerdChip();
     }
     updateNav();
   });
-  view.addEventListener('did-start-loading', () => updateNav());
-  view.addEventListener('did-stop-loading',  () => updateNav());
+  view.addEventListener('did-start-loading', () => { tabEl.classList.add('loading'); updateNav(); });
+  view.addEventListener('did-stop-loading',  () => { tabEl.classList.remove('loading'); updateNav(); });
 
   tabEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('close')) {
@@ -67,7 +128,7 @@ function createTab(url = HOMEPAGE) {
     }
   });
 
-  tabs.set(id, { tabEl, view });
+  tabs.set(id, { tabEl, view, splash });
   activateTab(id);
   return id;
 }
@@ -80,24 +141,34 @@ function safeGetUrl(view) {
 
 function activateTab(id) {
   if (activeId === id) return;
-  for (const [tid, { tabEl, view }] of tabs) {
+  for (const [tid, entry] of tabs) {
     const isActive = tid === id;
-    tabEl.classList.toggle('active', isActive);
-    view.classList.toggle('active', isActive);
+    entry.tabEl.classList.toggle('active', isActive);
+    entry.view.classList.toggle('active', isActive);
+    if (entry.splash) entry.splash.classList.toggle('active', isActive);
   }
   activeId = id;
 
   const { view } = tabs.get(id);
-  addressEl.value = safeGetUrl(view);
+  const url = safeGetUrl(view);
+  addressEl.value = isNewtabUrl(url) ? '' : url;
+  if (isNewtabUrl(url)) addressEl.focus();
   updateNav();
+  updateHerdChip();
+  // DevTools tá amarrado ao webContents da aba — fecha ao trocar
+  if (devtoolsOpen) closeDevTools();
 }
 
 function closeTab(id) {
   const entry = tabs.get(id);
   if (!entry) return;
-  entry.tabEl.remove();
   entry.view.remove();
+  if (entry.splash) entry.splash.remove();
   tabs.delete(id);
+
+  // Anima a saída antes de remover do DOM.
+  entry.tabEl.classList.add('exiting');
+  setTimeout(() => entry.tabEl.remove(), 200);
 
   if (activeId === id) {
     activeId = null;
@@ -136,8 +207,190 @@ reloadBtn.addEventListener('click', () => {
 });
 newtabBtn.addEventListener('click', () => createTab());
 
+// ---- Omnibox dropdown ----
+const OMNI_POPOVER = document.getElementById('omnibox-popover');
+let omniItems = [];
+let omniIdx = -1;
+let omniOpen = false;
+let omniSeq = 0;
+let omniDebounce = null;
+let omniLastQuery = '';
+let omniRenderedFor = '';
+
+function positionOmni() {
+  const r = addressEl.getBoundingClientRect();
+  OMNI_POPOVER.style.left  = r.left + 'px';
+  OMNI_POPOVER.style.top   = (r.bottom + 4) + 'px';
+  OMNI_POPOVER.style.width = r.width + 'px';
+}
+
+function iconFor(kind) {
+  switch (kind) {
+    case 'navigate': return '↪';
+    case 'tab':      return '⎘';
+    case 'history':  return '🕘';
+    case 'search':   return '🔍';
+    default:         return '·';
+  }
+}
+
+function renderOmni() {
+  if (!omniItems.length) { closeOmni(); return; }
+  positionOmni();
+  OMNI_POPOVER.innerHTML = '';
+  omniItems.forEach((it, i) => {
+    const el = document.createElement('div');
+    el.className = 'omni-item' + (i === omniIdx ? ' selected' : '');
+    let secondary = '';
+    if (it.kind === 'history' || it.kind === 'tab' || it.kind === 'navigate') {
+      try { secondary = ' · ' + new URL(it.url).hostname; } catch {}
+    }
+    el.innerHTML =
+      `<span class="omni-icon">${iconFor(it.kind)}</span>` +
+      `<span class="omni-text">${escapeHtml(it.title || it.query || it.url)}<span class="omni-secondary">${escapeHtml(secondary)}</span></span>` +
+      (it.kind === 'tab' ? `<span class="omni-pill">aba</span>` : '');
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // não dispara blur do input
+      activateOmniItem(it);
+    });
+    el.addEventListener('mouseenter', () => {
+      omniIdx = i;
+      Array.from(OMNI_POPOVER.children).forEach((c, j) => c.classList.toggle('selected', j === omniIdx));
+    });
+    OMNI_POPOVER.appendChild(el);
+  });
+  OMNI_POPOVER.classList.remove('hidden');
+  omniOpen = true;
+}
+
+function closeOmni() {
+  omniOpen = false;
+  omniItems = [];
+  omniIdx = -1;
+  OMNI_POPOVER.classList.add('hidden');
+  OMNI_POPOVER.innerHTML = '';
+}
+
+function selectedKey() {
+  if (omniIdx < 0 || omniIdx >= omniItems.length) return null;
+  const it = omniItems[omniIdx];
+  return it.kind + '::' + (it.url || it.query || '');
+}
+
+function isHighConfidence(it) {
+  if (!it || !it.url) return false;
+  if (it.kind === 'navigate') return true;
+  if (it.kind === 'history' && (it.visit_count || 0) >= 2) return true;
+  return false;
+}
+
+function applyItems(items, text) {
+  const prevKey = selectedKey();
+  omniItems = items;
+  if (!items.length) { omniIdx = -1; }
+  else if (prevKey) {
+    const idx = items.findIndex((it) => it.kind + '::' + (it.url || it.query || '') === prevKey);
+    omniIdx = idx >= 0 ? idx : 0;
+  } else {
+    omniIdx = 0;
+  }
+  omniRenderedFor = text;
+  renderOmni();
+  // Preconnect na top sugestão se for high-confidence
+  const top = items[0];
+  if (isHighConfidence(top)) window.brauze.omnibox.preconnect(top.url);
+}
+
+async function queryOmni(text) {
+  const seq = ++omniSeq;
+  omniLastQuery = text;
+  const openTabs = [];
+  for (const [id, entry] of tabs) {
+    const url = safeGetUrl(entry.view);
+    const title = entry.tabEl.querySelector('.title')?.textContent || '';
+    openTabs.push({ id, url, title });
+  }
+
+  // 1. Local: rápido, mostra na hora
+  let local = [];
+  try { local = await window.brauze.omnibox.queryLocal({ text, openTabs, activeTabId: activeId }); }
+  catch { local = []; }
+  if (seq !== omniSeq || omniLastQuery !== text) return;
+  applyItems(local, text);
+
+  // 2. Suggestions: chega depois, mergeia
+  let sugs = [];
+  try { sugs = await window.brauze.omnibox.querySuggestions(text); }
+  catch { sugs = []; }
+  if (seq !== omniSeq || omniLastQuery !== text) return;
+  // Filtra suggestions que duplicam fallback ou itens existentes
+  const merged = [...local];
+  for (const s of sugs) {
+    if (!merged.find((m) => m.kind === s.kind && (m.query || m.url) === (s.query || s.url))) {
+      merged.push(s);
+    }
+  }
+  // Reordena por score, preserva limit
+  merged.sort((a, b) => b.score - a.score);
+  applyItems(merged.slice(0, 10), text);
+}
+
+function scheduleOmni(text) {
+  if (omniDebounce) clearTimeout(omniDebounce);
+  if (!text.trim()) { closeOmni(); return; }
+  // Sem debounce: dispara imediato (local é instantâneo, suggestions vão em paralelo)
+  queryOmni(text);
+}
+
+function activateOmniItem(it) {
+  closeOmni();
+  if (!it) return;
+  const view = tabs.get(activeId)?.view;
+  if (!view) return;
+  if (it.kind === 'tab' && it.tabId != null) {
+    activateTab(it.tabId);
+    return;
+  }
+  if (it.kind === 'search') {
+    const url = 'https://www.google.com/search?q=' + encodeURIComponent(it.query);
+    view.loadURL(url);
+    return;
+  }
+  if (it.url) view.loadURL(it.url);
+}
+
+addressEl.addEventListener('input', () => {
+  scheduleOmni(addressEl.value);
+});
+
 addressEl.addEventListener('keydown', (e) => {
+  if (omniOpen) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      omniIdx = (omniIdx + 1) % omniItems.length;
+      renderOmni();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      omniIdx = (omniIdx - 1 + omniItems.length) % omniItems.length;
+      renderOmni();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeOmni();
+      return;
+    }
+    if (e.key === 'Enter' && omniIdx >= 0 && omniRenderedFor === addressEl.value) {
+      e.preventDefault();
+      if (mode === 'prompt') { submitPrompt(addressEl.value); return; }
+      activateOmniItem(omniItems[omniIdx]);
+      return;
+    }
+  }
   if (e.key === 'Enter') {
+    closeOmni();
     if (mode === 'prompt') {
       submitPrompt(addressEl.value);
     } else {
@@ -149,8 +402,14 @@ addressEl.addEventListener('keydown', (e) => {
 addressEl.addEventListener('focus', () => {
   addressEl.select();
   addressWrap.classList.add('focused');
+  if (addressEl.value.trim()) scheduleOmni(addressEl.value);
 });
-addressEl.addEventListener('blur', () => addressWrap.classList.remove('focused'));
+addressEl.addEventListener('blur', () => {
+  addressWrap.classList.remove('focused');
+  // pequeno delay pra permitir click nos itens
+  setTimeout(closeOmni, 120);
+});
+window.addEventListener('resize', () => { if (omniOpen) positionOmni(); });
 
 // Atalhos
 window.addEventListener('keydown', (e) => {
@@ -185,6 +444,42 @@ function renderRadarStatus(services) {
     radarDot.className = 'status-dot live';
     radarLabel.textContent = count === 1 ? '1 serviço' : `${count} serviços`;
   }
+}
+
+function renderKillButton(svc) {
+  const btn = document.createElement('button');
+  btn.className = 'service-btn danger';
+  btn.dataset.action = 'kill';
+  btn.textContent = `🛑 matar (PID ${svc.pid})`;
+  btn.title = `Mata o processo ${svc.pid} ouvindo em :${svc.port}`;
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const where = svc.cwd ? `\n\n${svc.cwd}` : '';
+    if (!confirm(`Matar PID ${svc.pid} na porta :${svc.port}?\n${svc.name}${where}`)) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ matando…';
+    try {
+      const res = await window.brauze.radar.killPid(svc.pid);
+      if (res.ok) {
+        btn.textContent = res.signal === 'SIGKILL' ? '✓ morto (SIGKILL)' : '✓ morto';
+        try {
+          const services = await window.brauze.radar.scanNow();
+          lastServices = services;
+          renderRadarStatus(services);
+          renderRadarList(services);
+        } catch {}
+      } else {
+        btn.disabled = false;
+        btn.textContent = `🛑 matar (PID ${svc.pid})`;
+        alert('Falha ao matar: ' + (res.error || 'erro desconhecido'));
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = `🛑 matar (PID ${svc.pid})`;
+      alert('Erro: ' + (err.message || err));
+    }
+  });
+  return btn;
 }
 
 function renderActionsRow(folder, folderName, source) {
@@ -288,8 +583,16 @@ function renderRadarList(services) {
     if (svc.cwd) {
       const folder = svc.cwd;
       const folderName = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || folder;
-      wrap.appendChild(renderActionsRow(folder, folderName, 'auto'));
+      const actions = renderActionsRow(folder, folderName, 'auto');
+      if (svc.pid) actions.appendChild(renderKillButton(svc));
+      wrap.appendChild(actions);
     } else {
+      if (svc.pid) {
+        const killRow = document.createElement('div');
+        killRow.className = 'service-actions';
+        killRow.appendChild(renderKillButton(svc));
+        wrap.appendChild(killRow);
+      }
       // sem cwd inferido — tenta watched folders async
       attachWatchedFolderMatches(svc, wrap);
     }
@@ -558,6 +861,38 @@ async function openTerminalIn(cwd, label) {
   return await createTermTab({ cwd, label });
 }
 
+// ---- Herd chip (.test → pasta do projeto) ----
+function getActiveHost() {
+  if (activeId == null) return null;
+  const entry = tabs.get(activeId);
+  if (!entry) return null;
+  try { return new URL(safeGetUrl(entry.view)).hostname; }
+  catch { return null; }
+}
+
+let herdChipEl = null;
+async function updateHerdChip() {
+  const host = getActiveHost();
+  if (herdChipEl) { herdChipEl.remove(); herdChipEl = null; }
+  if (!host || !host.endsWith('.test')) return;
+  let resolved = null;
+  try { resolved = await window.brauze.herd.resolve(host); } catch {}
+  if (!resolved) return;
+  if (getActiveHost() !== host) return; // mudou enquanto resolvia
+
+  const chip = document.createElement('div');
+  chip.className = 'cli-chip herd-chip';
+  chip.title = `Abrir terminal em ${resolved.path}`;
+  chip.innerHTML =
+    `<div class="cli-chip-main no-split">` +
+      `<span class="cli-chip-icon">📂</span>` +
+      `<span>${escapeHtml(resolved.name)}<span class="herd-tag">Herd</span></span>` +
+    `</div>`;
+  chip.addEventListener('click', () => openTerminalIn(resolved.path, resolved.name));
+  TERM_CHIPS.insertBefore(chip, TERM_CHIPS.firstChild);
+  herdChipEl = chip;
+}
+
 function hideTerminal() {
   if (!termOpen) return;
   termOpen = false;
@@ -620,6 +955,158 @@ window.addEventListener('mouseup', () => {
     setStoredTermHeight(Math.round(finalH));
     fitActive();
   }
+});
+
+// ---- DevTools docked (lateral direita) ----
+const DEVTOOLS_PANEL  = document.getElementById('devtools-panel');
+const DEVTOOLS_HOST   = document.getElementById('devtools-host');
+const DEVTOOLS_HANDLE = document.getElementById('devtools-resize-handle');
+const DEVTOOLS_CLOSE  = document.getElementById('devtools-close');
+const DEVTOOLS_DETACH = document.getElementById('devtools-detach');
+
+const DEVTOOLS_DEFAULT_W = 480;
+const DEVTOOLS_MIN_W     = 240;
+const DEVTOOLS_MAX_BUFFER = 320;
+
+let devtoolsOpen = false;
+let devtoolsTargetId = null;
+
+function getStoredDevToolsWidth() {
+  const v = parseInt(localStorage.getItem('brauze.devtools.width') || '', 10);
+  return Number.isFinite(v) && v >= DEVTOOLS_MIN_W ? v : DEVTOOLS_DEFAULT_W;
+}
+function setStoredDevToolsWidth(px) {
+  localStorage.setItem('brauze.devtools.width', String(px));
+}
+
+function getActiveWebview() {
+  if (activeId == null) return null;
+  const entry = tabs.get(activeId);
+  return entry ? entry.view : null;
+}
+
+function getDevToolsBounds() {
+  const r = DEVTOOLS_HOST.getBoundingClientRect();
+  return { x: r.left, y: r.top, width: r.width, height: r.height };
+}
+
+function pushDevToolsBounds() {
+  if (!devtoolsOpen) return;
+  window.brauze.devtools.setBounds(getDevToolsBounds());
+}
+
+async function openDevTools(opts = {}) {
+  const view = getActiveWebview();
+  if (!view) return;
+  let targetId;
+  try { targetId = view.getWebContentsId(); } catch { return; }
+
+  const w = getStoredDevToolsWidth();
+  document.documentElement.style.setProperty('--devtools-w', w + 'px');
+  DEVTOOLS_PANEL.classList.remove('hidden');
+  devtoolsOpen = true;
+
+  // Aguarda o layout do painel se acomodar antes de medir bounds
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  devtoolsTargetId = targetId;
+  const res = await window.brauze.devtools.open({
+    targetId,
+    bounds: getDevToolsBounds(),
+    inspectAt: opts.inspectAt || null,
+  });
+  if (!res || !res.ok) {
+    console.error('[devtools] open falhou:', res && res.error);
+    closeDevTools();
+  }
+}
+
+async function closeDevTools() {
+  if (devtoolsOpen) {
+    try { await window.brauze.devtools.close(); } catch {}
+  }
+  devtoolsTargetId = null;
+  devtoolsOpen = false;
+  DEVTOOLS_PANEL.classList.add('hidden');
+  document.documentElement.style.setProperty('--devtools-w', '0px');
+}
+
+async function detachDevTools() {
+  if (!devtoolsOpen) return;
+  await window.brauze.devtools.detach();
+  devtoolsTargetId = null;
+  devtoolsOpen = false;
+  DEVTOOLS_PANEL.classList.add('hidden');
+  document.documentElement.style.setProperty('--devtools-w', '0px');
+}
+
+function toggleDevTools() {
+  if (devtoolsOpen) closeDevTools();
+  else openDevTools();
+}
+
+DEVTOOLS_CLOSE.addEventListener('click', closeDevTools);
+DEVTOOLS_DETACH.addEventListener('click', detachDevTools);
+
+let dragDt = false;
+let dragDtStartX = 0;
+let dragDtStartW = 0;
+
+DEVTOOLS_HANDLE.addEventListener('mousedown', (e) => {
+  if (!devtoolsOpen) return;
+  e.preventDefault();
+  dragDt = true;
+  dragDtStartX = e.clientX;
+  dragDtStartW = DEVTOOLS_PANEL.getBoundingClientRect().width;
+  DEVTOOLS_PANEL.classList.add('dragging');
+  DRAG_OVERLAY.classList.remove('hidden');
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragDt) return;
+  const dx = e.clientX - dragDtStartX;
+  let newW = dragDtStartW - dx;
+  const maxW = window.innerWidth - DEVTOOLS_MAX_BUFFER;
+  if (newW > maxW) newW = maxW;
+  if (newW < 30) newW = 30;
+  document.documentElement.style.setProperty('--devtools-w', newW + 'px');
+  pushDevToolsBounds();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!dragDt) return;
+  dragDt = false;
+  DEVTOOLS_PANEL.classList.remove('dragging');
+  DRAG_OVERLAY.classList.add('hidden');
+  const finalW = DEVTOOLS_PANEL.getBoundingClientRect().width;
+  if (finalW < DEVTOOLS_MIN_W) closeDevTools();
+  else { setStoredDevToolsWidth(Math.round(finalW)); pushDevToolsBounds(); }
+});
+
+window.addEventListener('resize', () => { if (devtoolsOpen) pushDevToolsBounds(); });
+new ResizeObserver(() => { if (devtoolsOpen) pushDevToolsBounds(); }).observe(DEVTOOLS_HOST);
+
+window.brauze.window.onFullscreen((isFs) => {
+  document.body.classList.toggle('fullscreen', !!isFs);
+});
+
+window.brauze.devtools.onToggleRequest(() => toggleDevTools());
+
+window.brauze.devtools.onReattached(() => {
+  devtoolsOpen = true;
+  const w = getStoredDevToolsWidth();
+  document.documentElement.style.setProperty('--devtools-w', w + 'px');
+  DEVTOOLS_PANEL.classList.remove('hidden');
+  requestAnimationFrame(() => requestAnimationFrame(() => pushDevToolsBounds()));
+});
+
+window.brauze.devtools.onInspect(({ targetId, x, y }) => {
+  const view = getActiveWebview();
+  if (!view) return;
+  let activeWcId;
+  try { activeWcId = view.getWebContentsId(); } catch { return; }
+  if (activeWcId !== targetId) return; // trocou de aba antes de chegar
+  openDevTools({ inspectAt: { x, y } });
 });
 
 // ---- CLI chips ----

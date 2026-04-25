@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('brauze', {
       return () => ipcRenderer.removeListener('radar:update', listener);
     },
     scanNow: () => ipcRenderer.invoke('radar:scan-now'),
+    killPid: (pid) => ipcRenderer.invoke('radar:kill-pid', pid),
   },
   tabs: {
     onOpen: (callback) => {
@@ -42,6 +43,44 @@ contextBridge.exposeInMainWorld('brauze', {
   },
   shell: {
     openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
+  },
+  devtools: {
+    open:      (payload) => ipcRenderer.invoke('devtools:open', payload),
+    setBounds: (bounds)  => ipcRenderer.send('devtools:set-bounds', bounds),
+    close:     ()        => ipcRenderer.invoke('devtools:close'),
+    detach:    ()        => ipcRenderer.invoke('devtools:detach'),
+    reattach:  ()        => ipcRenderer.invoke('devtools:reattach'),
+    onReattached: (cb) => {
+      const l = () => cb();
+      ipcRenderer.on('devtools:reattached', l);
+      return () => ipcRenderer.removeListener('devtools:reattached', l);
+    },
+    onInspect: (cb) => {
+      const l = (_e, payload) => cb(payload);
+      ipcRenderer.on('devtools:inspect-request', l);
+      return () => ipcRenderer.removeListener('devtools:inspect-request', l);
+    },
+    onToggleRequest: (cb) => {
+      const l = () => cb();
+      ipcRenderer.on('devtools:toggle-request', l);
+      return () => ipcRenderer.removeListener('devtools:toggle-request', l);
+    },
+  },
+  window: {
+    onFullscreen: (cb) => {
+      const l = (_e, isFs) => cb(isFs);
+      ipcRenderer.on('window:fullscreen', l);
+      return () => ipcRenderer.removeListener('window:fullscreen', l);
+    },
+  },
+  omnibox: {
+    queryLocal:       (payload) => ipcRenderer.invoke('omnibox:query-local', payload),
+    querySuggestions: (text)    => ipcRenderer.invoke('omnibox:query-suggestions', text),
+    recordVisit:      (payload) => ipcRenderer.send('omnibox:record-visit', payload),
+    preconnect:       (url)     => ipcRenderer.send('omnibox:preconnect', url),
+  },
+  herd: {
+    resolve: (host) => ipcRenderer.invoke('herd:resolve', host),
   },
   watchedFolders: {
     list:   ()        => ipcRenderer.invoke('wf:list'),

@@ -10,7 +10,9 @@
 </head>
 <body>
   <div id="chrome">
-    <div id="tabs"></div>
+    <div id="tabs">
+      <button id="newtab" class="tab-newtab" title="Nova aba (Ctrl+T)">+</button>
+    </div>
     <div id="toolbar">
       <button id="back"    class="navbtn" title="Voltar">‹</button>
       <button id="forward" class="navbtn" title="Avançar">›</button>
@@ -20,7 +22,6 @@
         <input id="address" type="text" spellcheck="false"
                placeholder="Pesquise ou digite uma URL">
       </div>
-      <button id="newtab"  class="navbtn" title="Nova aba">+</button>
     </div>
   </div>
   <div id="views"></div>
@@ -34,6 +35,20 @@
       <button id="term-close" class="term-icon-btn" title="Fechar (Ctrl+`)">×</button>
     </div>
     <div id="terminal-bodies"></div>
+  </div>
+
+  <div id="omnibox-popover" class="hidden"></div>
+
+  <div id="devtools-panel" class="hidden">
+    <div id="devtools-resize-handle" title="Arraste para redimensionar"></div>
+    <div id="devtools-header">
+      <span id="devtools-title">DevTools</span>
+      <div class="devtools-actions">
+        <button id="devtools-detach" class="term-icon-btn" title="Desacoplar">⇱</button>
+        <button id="devtools-close"  class="term-icon-btn" title="Fechar (Cmd+Opt+I)">×</button>
+      </div>
+    </div>
+    <div id="devtools-host"></div>
   </div>
 
   <div id="dragging-overlay" class="hidden"></div>

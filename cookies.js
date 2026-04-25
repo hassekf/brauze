@@ -9,6 +9,31 @@ const privacy = require('./privacy');
 const allowed3PCookies = new Set();
 let storePath = '';
 
+// Domínios sempre permitidos como 3P (auth/SSO/captcha/payments).
+// Bloquear esses quebra logins; analytics deles ainda é blocado pelo adblock.
+const KNOWN_AUTH_PROVIDERS = new Set([
+  // OpenAI
+  'openai.com', 'chatgpt.com',
+  // Google (auth + captcha; analytics é blocado pelo adblock pelo nome do host)
+  'google.com', 'googleusercontent.com', 'gstatic.com', 'recaptcha.net',
+  // Microsoft
+  'microsoft.com', 'live.com', 'microsoftonline.com', 'office.com',
+  // Apple
+  'apple.com', 'icloud.com',
+  // GitHub
+  'github.com', 'githubusercontent.com', 'githubassets.com',
+  // Auth0 / Okta / Duo
+  'auth0.com', 'okta.com', 'duosecurity.com',
+  // Social/login
+  'facebook.com', 'discord.com', 'slack.com', 'twitch.tv',
+  // Pagamentos
+  'paypal.com', 'stripe.com',
+  // Cloudflare (proteção/captcha)
+  'cloudflare.com',
+  // Amazon
+  'amazon.com', 'amazonaws.com',
+]);
+
 function load(userDataPath) {
   storePath = path.join(userDataPath, 'cookies-3p-allow.json');
   try {
@@ -38,6 +63,7 @@ function isThirdParty(details) {
   if (!requestSite || !topSite) return false;
   if (requestSite === topSite) return false;
   if (allowed3PCookies.has(topSite)) return false;
+  if (KNOWN_AUTH_PROVIDERS.has(requestSite)) return false; // SSO/captcha/etc precisam do cookie
   return true;
 }
 
